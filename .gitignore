@@ -3,13 +3,6 @@ dist/
 .vercel/
 .vite/
 *.log
-npm-debug.log*
-pnpm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 .env
-.env.*.local
-.DS_Store
-Thumbs.db
 kpi.xlsx
 kpi.xls
