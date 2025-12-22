@@ -287,7 +287,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
   };
 
   return (
-    <div className="relative min-h-screen bg-slate-100 text-slate-900">
+    <div className="relative min-h-screen bg-slate-50 text-slate-900 surface-grid">
 
       <div className="relative flex min-h-screen">
         <aside

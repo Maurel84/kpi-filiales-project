@@ -32,7 +32,7 @@ export function Login() {
 
       <div className="relative max-w-6xl mx-auto px-4 py-12">
         <div className="grid md:grid-cols-2 gap-10 items-center">
-          <div className="glass-card border-white/10 text-white p-8 shadow-2xl">
+          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/90 via-slate-900/80 to-amber-950/70 text-white p-8 shadow-2xl backdrop-blur-xl">
             <div className="flex items-center gap-3 mb-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/90 shadow-lg">
                 <img src={logoUrl} alt="Tractafric Equipment" className="h-7 w-auto" />
@@ -42,23 +42,23 @@ export function Login() {
                 <h1 className="text-3xl font-bold mt-2 leading-tight">Application Multi-Filiales</h1>
               </div>
             </div>
-            <p className="text-slate-200 leading-relaxed">
+            <p className="text-slate-100/90 leading-relaxed">
               Pilotage unifié des filiales, KPIs, stocks et ventes dans une expérience premium.
               Authentifiez-vous pour retrouver vos tableaux de bord en temps réel.
             </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8">
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-start gap-3">
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-start gap-3 backdrop-blur">
                 <ShieldCheck className="h-5 w-5 text-amber-300 mt-1" />
                 <div>
                   <p className="font-semibold text-white">Sécurisé</p>
-                  <p className="text-sm text-slate-200/80">Connexion chiffrée et profils valides.</p>
+                  <p className="text-sm text-slate-100/80">Connexion chiffrée et profils valides.</p>
                 </div>
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-start gap-3">
+              <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-start gap-3 backdrop-blur">
                 <Building2 className="h-5 w-5 text-yellow-300 mt-1" />
                 <div>
                   <p className="font-semibold text-white">Filiales en direct</p>
-                  <p className="text-sm text-slate-200/80">Vue croisée siège et filiales.</p>
+                  <p className="text-sm text-slate-100/80">Vue croisée siège et filiales.</p>
                 </div>
               </div>
             </div>
