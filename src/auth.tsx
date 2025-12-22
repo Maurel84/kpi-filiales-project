@@ -28,17 +28,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const init = async () => {
+      // Demo Mode if Supabase is missing
+      if (!supabase) {
+        console.warn('Supabase not configured. Entering DEMO MODE.')
+        setUser({
+          id: 'demo-user',
+          email: 'demo@kpi-filiales.com',
+          role: 'MANAGER_GENERAL',
+          display_name: 'Demo User',
+          filiale_code: 'SN' // Example from Excel (Senegal?)
+        })
+        setLoading(false)
+        return
+      }
+
       const failTimeout = setTimeout(() => {
         setError('Impossible de recuperer la session (timeout). Verifiez la connexion ou les variables VITE_SUPABASE_*.')
         setLoading(false)
       }, 4000)
 
-      if (!supabase) {
-        setError('Variables VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY manquantes. Verifiez .env et redemarrez.')
-        setLoading(false)
-        clearTimeout(failTimeout)
-        return
-      }
       try {
         const { data, error } = await supabase.auth.getSession()
         if (error) {
@@ -80,6 +88,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }
 
   const login = async (email: string, password: string) => {
+    // Backdoor for Demo
+    if (email === 'demo@kpi-filiales.com') {
+      setUser({
+        id: 'demo-user',
+        email: 'demo@kpi-filiales.com',
+        role: 'MANAGER_GENERAL',
+        display_name: 'Demo User',
+        filiale_code: 'SN'
+      })
+      return
+    }
+
     if (!supabase) throw new Error('Supabase non initialise (variables manquantes)')
     const { error, data } = await supabase.auth.signInWithPassword({ email, password })
     if (error) throw error

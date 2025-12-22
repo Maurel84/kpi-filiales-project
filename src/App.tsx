@@ -1,247 +1,193 @@
-import React from 'react'
-import { useAuth } from './auth'
-import { LoginForm } from './components/LoginForm'
-import { KPIEditor } from './components/KPIEditor'
-import { PowerBIPage } from './components/PowerBIPage'
-import { BudgetsTable } from './components/BudgetsTable'
-import { OpportunitiesTable } from './components/OpportunitiesTable'
-import { ForecastTable } from './components/ForecastTable'
-import { ActionsTable } from './components/ActionsTable'
+import { useEffect, useState } from 'react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { Login } from './components/Auth/Login';
+import { MainLayout } from './components/Layout/MainLayout';
+import { Dashboard } from './components/Dashboard/Dashboard';
+import { VentesView } from './components/Ventes/VentesView';
+import { StocksView } from './components/Stocks/StocksView';
+import { KPIsView } from './components/KPIs/KPIsView';
+import { PlanActionsView } from './components/PlanActions/PlanActionsView';
+import { ForecastsView } from './components/Forecasts/ForecastsView';
+import { PDMView } from './components/PDM/PDMView';
+import { CommandesClientsView } from './components/CommandesClients/CommandesClientsView';
+import { CommandesFournisseursView } from './components/CommandesFournisseurs/CommandesFournisseursView';
+import { VisitesClientsView } from './components/VisitesClients/VisitesClientsView';
+import { DocumentsImportsView } from './components/Documents/DocumentsImportsView';
+import { PowerBIView } from './components/PowerBI/PowerBIView';
+import { VentesPerduesView } from './components/VentesPerdues/VentesPerduesView';
+import { ParcMachinesView } from './components/ParcMachines/ParcMachinesView';
+import { InspectionsTechniquesView } from './components/Inspections/InspectionsTechniquesView';
+import { BudgetsView } from './components/Budgets/BudgetsView';
+import { SessionsInterfilialesView } from './components/SessionsInterfiliales/SessionsInterfilialesView';
+import { UsersManagementView } from './components/Admin/UsersManagementView';
+import { Loader2 } from 'lucide-react';
+import type { Database } from './lib/database.types';
 
-type TabId = 'saisie' | 'analyse' | 'budgets' | 'opps' | 'forecast' | 'actions'
+function AppContent() {
+  const { user, loading, profile, signOut } = useAuth();
+  const [currentView, setCurrentView] = useState('dashboard');
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    if (typeof localStorage !== 'undefined') {
+      return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
+    }
+    return 'light';
+  });
 
-const tabs: { id: TabId; label: string }[] = [
-  { id: 'saisie', label: 'Saisie' },
-  { id: 'analyse', label: 'Analyse (Power BI)' },
-  { id: 'budgets', label: 'Budgets' },
-  { id: 'opps', label: 'Opportunites' },
-  { id: 'forecast', label: 'Forecast' },
-  { id: 'actions', label: 'Plan d action' }
-]
+  const toggleTheme = () => {
+    setTheme((prev) => {
+      const next = prev === 'light' ? 'dark' : 'light';
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('theme', next);
+      }
+      return next;
+    });
+  };
 
-const App: React.FC = () => {
-  const { user, loading, error, login, logout } = useAuth()
-  const [filiale, setFiliale] = React.useState<string>(user?.filiale_code || '')
-  const [month, setMonth] = React.useState<number>(new Date().getMonth() + 1)
-  const [year, setYear] = React.useState<number>(new Date().getFullYear())
-  const [tab, setTab] = React.useState<TabId>('saisie')
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.toggle('dark', theme === 'dark');
+  }
 
-  const canEditFiliale = user?.role === 'MANAGER_GENERAL'
-  const roleLabel =
-    user?.role === 'MANAGER_GENERAL'
-      ? 'Manager general'
-      : user?.role === 'MANAGER_FILIALE'
-        ? 'Manager filiale'
-        : 'Utilisateur'
+  type Role = Database['public']['Tables']['users_profiles']['Row']['role'];
+  const viewAccess: Record<string, Role[] | 'all'> = {
+    dashboard: 'all',
+    kpis: 'all',
+    'plan-actions': 'all',
+    pdm: ['manager_filiale', 'admin_siege'],
+    forecasts: ['manager_filiale', 'admin_siege', 'commercial'],
+    'visites-clients': ['commercial', 'manager_filiale', 'admin_siege'],
+    stocks: 'all',
+    commandes: 'all',
+    'commandes-clients': ['commercial', 'manager_filiale', 'admin_siege'],
+    ventes: 'all',
+    'ventes-perdues': ['commercial', 'manager_filiale', 'admin_siege'],
+    'parc-machines': 'all',
+    inspections: ['technicien', 'manager_filiale', 'admin_siege'],
+    budgets: ['manager_filiale', 'admin_siege'],
+    'sessions-inter': ['manager_filiale', 'admin_siege'],
+    'documents-imports': ['admin_siege'],
+    'power-bi': ['admin_siege', 'manager_filiale'],
+    users: ['admin_siege'],
+  };
 
-  React.useEffect(() => {
-    if (user) setFiliale(user.filiale_code || '')
-  }, [user])
+  const isViewAllowed = (view: string, role?: Role | null) => {
+    const allowed = viewAccess[view];
+    if (!allowed) return false;
+    if (allowed === 'all') return true;
+    if (!role) return false;
+    return allowed.includes(role);
+  };
+
+  useEffect(() => {
+    if (!user) return;
+    const role = profile?.role;
+    if (!isViewAllowed(currentView, role)) {
+      setCurrentView('dashboard');
+    }
+  }, [currentView, profile?.role, user]);
+
+  useEffect(() => {
+    if (!user) return;
+    setCurrentView('dashboard');
+  }, [user?.id]);
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4">
-        <div className="text-lg text-center space-y-2">
-          <div>Chargement...</div>
-          {error && <div className="text-sm text-amber-300">{error}</div>}
+      <div className="relative min-h-screen bg-neutral-950 flex items-center justify-center overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-neutral-950 via-zinc-900 to-neutral-950" />
+        <div className="absolute -left-24 top-0 h-80 w-80 rounded-full bg-amber-400/15 blur-3xl" />
+        <div className="absolute right-[-8rem] bottom-[-6rem] h-96 w-96 rounded-full bg-yellow-300/10 blur-3xl" />
+        <div className="relative text-center bg-white/5 border border-white/10 rounded-3xl px-8 py-10 shadow-2xl backdrop-blur-xl">
+          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg shadow-amber-900/30">
+            <Loader2 className="w-7 h-7 text-white animate-spin" />
+          </div>
+          <p className="text-white text-xl font-semibold">Initialisation en cours</p>
+          <p className="text-slate-200 text-sm mt-1">Synchronisation de votre espace en temps reel...</p>
         </div>
       </div>
-    )
+    );
   }
 
   if (!user) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100 flex items-center justify-center px-4">
-        <div className="w-full max-w-sm p-8 bg-slate-900/80 border border-slate-800 rounded-2xl shadow-xl backdrop-blur">
-          <h2 className="text-xl mb-2 font-semibold">Portail KPI</h2>
-          <p className="text-sm text-slate-400 mb-6">
-            Connectez-vous pour acceder aux saisies et aux analyses.
-          </p>
-          {error && <div className="mb-3 text-sm text-amber-300">{error}</div>}
-          <LoginForm onLogin={login} />
-        </div>
-      </div>
-    )
+    return <Login />;
   }
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-slate-100">
-      <div className="max-w-6xl mx-auto px-4 py-6">
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div className="space-y-1">
-            <p className="text-xs uppercase tracking-[0.3em] text-indigo-300">KPI Filiales</p>
-            <h1 className="text-3xl font-semibold">Pilotage & Analyse</h1>
-            <p className="text-sm text-slate-400">
-              Suivez vos indicateurs, budgets, opportunites et forecast.
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="bg-slate-900/70 border border-slate-800 rounded-2xl px-4 py-2 shadow-lg">
-              <div className="text-xs text-slate-400">Connecte</div>
-              <div className="font-semibold">{user.display_name || user.email}</div>
-              <div className="text-xs text-indigo-300">
-                {roleLabel} {user.filiale_code ? `· Filiale ${user.filiale_code}` : '· Toutes filiales'}
-              </div>
-            </div>
+  if (!loading && user && !profile) {
+    return (
+      <div className="relative min-h-screen bg-slate-100 flex items-center justify-center px-6">
+        <div className="max-w-xl w-full rounded-2xl border border-slate-200 bg-white p-8 shadow-lg">
+          <h1 className="text-2xl font-semibold text-slate-900">Profil utilisateur introuvable</h1>
+          <p className="text-slate-600 mt-2">
+            Votre compte est bien cree, mais le profil metier n'a pas ete trouve dans la base. Merci de contacter l'admin siege.
+          </p>
+          <div className="mt-6 flex justify-end">
             <button
-              onClick={() => logout()}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-semibold shadow-lg shadow-indigo-500/20 hover:translate-y-[-1px] transition"
+              onClick={signOut}
+              className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
             >
-              Deconnexion
+              Se deconnecter
             </button>
           </div>
-        </header>
-
-        <section className="mt-6 grid gap-3 md:grid-cols-3">
-          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 shadow-lg">
-            <label className="text-xs uppercase tracking-wide text-slate-400">Filiale</label>
-            <input
-              value={filiale}
-              disabled={!canEditFiliale}
-              onChange={e => setFiliale(e.target.value)}
-              className="mt-2 w-full rounded-xl bg-slate-800/70 border border-slate-700 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 disabled:opacity-60"
-              placeholder="Code filiale"
-            />
-            {!canEditFiliale && (
-              <p className="text-[11px] text-slate-500 mt-1">Filiale verrouillee pour ce compte.</p>
-            )}
-          </div>
-          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 shadow-lg">
-            <label className="text-xs uppercase tracking-wide text-slate-400">Mois</label>
-            <select
-              value={month}
-              onChange={e => setMonth(Number(e.target.value))}
-              className="mt-2 w-full rounded-xl bg-slate-800/70 border border-slate-700 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-            >
-              {Array.from({ length: 12 }).map((_, i) => (
-                <option key={i + 1} value={i + 1}>
-                  {i + 1}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="bg-slate-900/70 border border-slate-800 rounded-2xl p-4 shadow-lg">
-            <label className="text-xs uppercase tracking-wide text-slate-400">Annee</label>
-            <input
-              type="number"
-              value={year}
-              onChange={e => setYear(Number(e.target.value))}
-              className="mt-2 w-full rounded-xl bg-slate-800/70 border border-slate-700 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
-              min={2000}
-              max={2100}
-            />
-          </div>
-        </section>
-
-        <nav className="mt-6">
-          <div className="flex flex-wrap gap-2 bg-slate-900/80 border border-slate-800 rounded-full p-1 shadow-lg">
-            {tabs.map(t => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`px-4 py-2 rounded-full text-sm font-semibold transition ${
-                  tab === t.id
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-500/30'
-                    : 'text-slate-300 hover:text-white'
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </nav>
-
-        <section className="mt-6 space-y-4">
-          {tab === 'saisie' && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">Saisie des KPI</h3>
-                  <p className="text-sm text-slate-400">
-                    Filiale {filiale || '—'} · Mois {month} / {year}
-                  </p>
-                </div>
-                <span className="text-xs px-3 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                  Mise a jour en direct
-                </span>
-              </div>
-              <div className="p-6">
-                <KPIEditor filiale={filiale} year={year} month={month} />
-              </div>
-            </div>
-          )}
-
-          {tab === 'analyse' && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-800">
-                <h3 className="text-lg font-semibold">Analyse Power BI</h3>
-                <p className="text-sm text-slate-400">
-                  Visualisation filtree par filiale, mois et annee selectionnes.
-                </p>
-              </div>
-              <div className="p-2 rounded-3xl overflow-hidden">
-                <PowerBIPage filiale={filiale} year={year} month={month} />
-              </div>
-            </div>
-          )}
-
-          {tab === 'budgets' && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-800">
-                <h3 className="text-lg font-semibold">Budgets (B2026)</h3>
-                <p className="text-sm text-slate-400">
-                  Lignes budgetaires par filiale, produit, plan compte et constructeur.
-                </p>
-              </div>
-              <div className="p-4">
-                <BudgetsTable filiale={filiale} year={year} />
-              </div>
-            </div>
-          )}
-
-          {tab === 'opps' && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-800">
-                <h3 className="text-lg font-semibold">Opportunites (LISTE)</h3>
-                <p className="text-sm text-slate-400">
-                  Marque, modele, pays, vendeur, statut, priorite.
-                </p>
-              </div>
-              <div className="p-4">
-                <OpportunitiesTable />
-              </div>
-            </div>
-          )}
-
-          {tab === 'forecast' && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-800">
-                <h3 className="text-lg font-semibold">Forecast</h3>
-                <p className="text-sm text-slate-400">
-                  Historique 2017-2024 et previsions 2026 par modele/code.
-                </p>
-              </div>
-              <div className="p-4">
-                <ForecastTable />
-              </div>
-            </div>
-          )}
-
-          {tab === 'actions' && (
-            <div className="bg-slate-900/80 border border-slate-800 rounded-3xl shadow-xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-800">
-                <h3 className="text-lg font-semibold">Plan d action</h3>
-                <p className="text-sm text-slate-400">Actions, responsables, priorites et statuts.</p>
-              </div>
-              <div className="p-4">
-                <ActionsTable />
-              </div>
-            </div>
-          )}
-        </section>
+        </div>
       </div>
-    </div>
-  )
+    );
+  }
+
+  const renderView = () => {
+    switch (currentView) {
+      case 'dashboard':
+        return <Dashboard onNavigate={setCurrentView} />;
+      case 'kpis':
+        return <KPIsView />;
+      case 'plan-actions':
+        return <PlanActionsView />;
+      case 'pdm':
+        return <PDMView />;
+      case 'forecasts':
+        return <ForecastsView />;
+      case 'stocks':
+        return <StocksView />;
+      case 'ventes':
+        return <VentesView />;
+      case 'visites-clients':
+        return <VisitesClientsView />;
+      case 'ventes-perdues':
+        return <VentesPerduesView />;
+      case 'commandes-clients':
+        return <CommandesClientsView />;
+      case 'commandes':
+        return <CommandesFournisseursView />;
+      case 'documents-imports':
+        return <DocumentsImportsView />;
+      case 'power-bi':
+        return <PowerBIView />;
+      case 'parc-machines':
+        return <ParcMachinesView />;
+      case 'inspections':
+        return <InspectionsTechniquesView />;
+      case 'budgets':
+        return <BudgetsView />;
+      case 'sessions-inter':
+        return <SessionsInterfilialesView />;
+      case 'users':
+        return <UsersManagementView />;
+      default:
+        return <Dashboard onNavigate={setCurrentView} />;
+    }
+  };
+
+  return (
+    <MainLayout currentView={currentView} onViewChange={setCurrentView} theme={theme} onToggleTheme={toggleTheme}>
+      {renderView()}
+    </MainLayout>
+  );
 }
 
-export default App
+function App() {
+  return (
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
+  );
+}
+
+export default App;

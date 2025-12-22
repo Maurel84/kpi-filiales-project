@@ -1,14 +1,97 @@
-@import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700&family=Source+Sans+3:wght@400;500;600&display=swap');
 
-:root {
-  color-scheme: dark;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+    --tae-yellow: #feb910;
+    --tae-yellow-strong: #f59e0b;
+    --tae-black: #0b0b0b;
+    --tae-sand: #fff7e1;
+    --tae-graphite: #1f2937;
+    --font-display: 'Montserrat', 'Segoe UI', sans-serif;
+    --font-body: 'Source Sans 3', 'Segoe UI', sans-serif;
+  }
+
+  * {
+    font-family: var(--font-body);
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-display);
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+    background-image:
+      radial-gradient(circle at 12% 18%, rgba(254, 185, 16, 0.18), transparent 40%),
+      radial-gradient(circle at 88% 5%, rgba(17, 24, 39, 0.08), transparent 35%),
+      linear-gradient(120deg, rgba(254, 185, 16, 0.08), rgba(255, 255, 255, 0));
+  }
+
+  .dark {
+    color-scheme: dark;
+  }
+
+  .dark body {
+    background: #0b0b0b;
+    color: #e2e8f0;
+  }
+
+  .dark .bg-white {
+    background-color: #0f172a !important;
+    color: #e2e8f0 !important;
+  }
+  .dark .bg-slate-50,
+  .dark .bg-slate-100 {
+    background-color: #0b1324 !important;
+  }
+  .dark .text-slate-900,
+  .dark .text-slate-800,
+  .dark .text-slate-700,
+  .dark .text-slate-600 {
+    color: #e2e8f0 !important;
+  }
+  .dark .border-slate-200,
+  .dark .border-slate-300 {
+    border-color: #1f2937 !important;
+  }
+  .dark .bg-amber-50,
+  .dark .bg-amber-100 {
+    background-color: #1f1a0b !important;
+    color: #fde68a !important;
+  }
 }
 
-body {
-  margin: 0;
-  font-family: 'Manrope', 'Segoe UI', system-ui, -apple-system, sans-serif;
-  background-color: #0f172a;
-  color: #e2e8f0;
-  -webkit-font-smoothing: antialiased;
+@layer components {
+  .glass-card {
+    @apply bg-white/85 backdrop-blur-xl border border-amber-100/60 shadow-lg shadow-amber-900/10 rounded-2xl;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(90deg, var(--tae-yellow-strong), #fbbf24, var(--tae-yellow));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .surface-grid {
+    background-image:
+      linear-gradient(to right, rgba(30, 41, 59, 0.06) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(30, 41, 59, 0.06) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
 }
