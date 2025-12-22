@@ -11,6 +11,7 @@ interface AuthContextType {
   session: Session | null;
   profile: UserProfile | null;
   loading: boolean;
+  profileLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, userData: {
     prenom: string;
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -37,7 +39,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
+          setProfileLoading(true);
           await loadProfile(session.user.id);
+          setProfileLoading(false);
         }
         setLoading(false);
       })();
@@ -48,9 +52,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
+          setProfileLoading(true);
           await loadProfile(session.user.id);
+          setProfileLoading(false);
         } else {
           setProfile(null);
+          setProfileLoading(false);
         }
       })();
     });
@@ -59,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadProfile = async (userId: string) => {
+    setProfileLoading(true);
     const { data, error } = await supabase
       .from('users_profiles')
       .select('*')
@@ -68,6 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!error && data) {
       setProfile(data as UserProfile);
     }
+    setProfileLoading(false);
   };
 
   const signIn = async (email: string, password: string) => {
@@ -153,7 +162,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, profileLoading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

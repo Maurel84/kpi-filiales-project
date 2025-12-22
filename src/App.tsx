@@ -24,7 +24,7 @@ import { Loader2 } from 'lucide-react';
 import type { Database } from './lib/database.types';
 
 function AppContent() {
-  const { user, loading, profile, signOut } = useAuth();
+  const { user, loading, profile, profileLoading, signOut } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof localStorage !== 'undefined') {
@@ -111,7 +111,7 @@ function AppContent() {
     return <Login />;
   }
 
-  if (!loading && user && !profile) {
+  if (!loading && !profileLoading && user && !profile) {
     return (
       <div className="relative min-h-screen bg-slate-100 flex items-center justify-center px-6">
         <div className="max-w-xl w-full rounded-2xl border border-slate-200 bg-white p-8 shadow-lg">
