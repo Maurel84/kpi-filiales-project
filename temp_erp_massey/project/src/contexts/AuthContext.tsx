@@ -1,4 +1,3 @@
-/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
@@ -11,7 +10,6 @@ interface AuthContextType {
   session: Session | null;
   profile: UserProfile | null;
   loading: boolean;
-  profileLoading: boolean;
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUp: (email: string, password: string, userData: {
     prenom: string;
@@ -19,7 +17,6 @@ interface AuthContextType {
     filiale_id?: string;
     role: UserProfile['role'];
     poste?: string;
-    actif?: boolean;
   }) => Promise<{ error: Error | null }>;
   signOut: () => Promise<void>;
 }
@@ -31,43 +28,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [profileLoading, setProfileLoading] = useState(false);
-
-  const logAuthEvent = async (event: 'signed_in' | 'signed_out', userId: string | null) => {
-    if (!userId) return;
-    if (typeof window !== 'undefined') {
-      try {
-        const key = `auth_event_${userId}`;
-        const raw = window.sessionStorage.getItem(key);
-        if (raw) {
-          const last = JSON.parse(raw) as { event: string; at: number; userAgent: string };
-          if (
-            last.event === event &&
-            last.userAgent === navigator.userAgent &&
-            Date.now() - last.at < 30000
-          ) {
-            return;
-          }
-        }
-        window.sessionStorage.setItem(
-          key,
-          JSON.stringify({ event, at: Date.now(), userAgent: navigator.userAgent })
-        );
-      } catch {
-        // Ignore session storage errors.
-      }
-    }
-    try {
-      await supabase.from('auth_events').insert({
-        user_id: userId,
-        event,
-        user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-        ip_address: null,
-      });
-    } catch {
-      // Ignore audit errors to avoid blocking auth.
-    }
-  };
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -75,28 +35,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          setProfileLoading(true);
           await loadProfile(session.user.id);
-          setProfileLoading(false);
         }
         setLoading(false);
       })();
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       (async () => {
         setSession(session);
         setUser(session?.user ?? null);
         if (session?.user) {
-          setProfileLoading(true);
-          if (event === 'SIGNED_IN') {
-            void logAuthEvent('signed_in', session.user.id);
-          }
           await loadProfile(session.user.id);
-          setProfileLoading(false);
         } else {
           setProfile(null);
-          setProfileLoading(false);
         }
       })();
     });
@@ -105,7 +57,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const loadProfile = async (userId: string) => {
-    setProfileLoading(true);
     const { data, error } = await supabase
       .from('users_profiles')
       .select('*')
@@ -113,9 +64,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .maybeSingle();
 
     if (!error && data) {
-      setProfile(data as UserProfile);
+      setProfile(data);
     }
-    setProfileLoading(false);
   };
 
   const signIn = async (email: string, password: string) => {
@@ -132,26 +82,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     filiale_id?: string;
     role: UserProfile['role'];
     poste?: string;
-    actif?: boolean;
   }) => {
-    if (profile?.role !== 'admin_siege') {
-      return { error: new Error('Création de comptes réservée à l\'administrateur siège.') };
-    }
-
-    const adminSession = session;
-
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
     });
 
     if (authError) {
-      if (adminSession?.access_token && adminSession.refresh_token) {
-        await supabase.auth.setSession({
-          access_token: adminSession.access_token,
-          refresh_token: adminSession.refresh_token,
-        });
-      }
       return { error: authError };
     }
 
@@ -166,27 +103,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           filiale_id: userData.filiale_id || null,
           role: userData.role,
           poste: userData.poste || null,
-          actif: userData.actif ?? true,
         });
 
       if (profileError) {
-        if (adminSession?.access_token && adminSession.refresh_token) {
-          await supabase.auth.setSession({
-            access_token: adminSession.access_token,
-            refresh_token: adminSession.refresh_token,
-          });
-        }
         return { error: profileError };
-      }
-    }
-
-    if (adminSession?.access_token && adminSession.refresh_token) {
-      await supabase.auth.setSession({
-        access_token: adminSession.access_token,
-        refresh_token: adminSession.refresh_token,
-      });
-      if (adminSession.user?.id) {
-        await loadProfile(adminSession.user.id);
       }
     }
 
@@ -194,7 +114,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await logAuthEvent('signed_out', user?.id ?? null);
     await supabase.auth.signOut();
     setUser(null);
     setSession(null);
@@ -202,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, session, profile, loading, profileLoading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, session, profile, loading, signIn, signUp, signOut }}>
       {children}
     </AuthContext.Provider>
   );

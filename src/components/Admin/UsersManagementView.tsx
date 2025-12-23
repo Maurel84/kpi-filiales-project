@@ -6,6 +6,7 @@ import type { Database } from '../../lib/database.types';
 
 type UserProfile = Database['public']['Tables']['users_profiles']['Row'];
 type Filiale = Pick<Database['public']['Tables']['filiales']['Row'], 'id' | 'nom' | 'code' | 'actif'>;
+type AuthEvent = Database['public']['Tables']['auth_events']['Row'];
 
 const roleLabels: Record<UserProfile['role'], string> = {
   admin_siege: 'Admin siège',
@@ -30,11 +31,13 @@ export function UsersManagementView() {
   const { profile, signUp } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [filiales, setFiliales] = useState<Filiale[]>([]);
+  const [authEvents, setAuthEvents] = useState<AuthEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [formData, setFormData] = useState(defaultForm);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [authEventsError, setAuthEventsError] = useState('');
 
   const canManage = profile?.role === 'admin_siege';
 
@@ -45,25 +48,49 @@ export function UsersManagementView() {
     }, {});
   }, [filiales]);
 
+  const uniqueAuthEvents = useMemo(() => {
+    const seen = new Set<string>();
+    return authEvents.filter((event) => {
+      const timestamp = event.created_at ? event.created_at.slice(0, 16) : '';
+      const key = `${event.user_id}|${event.event}|${timestamp}|${event.user_agent ?? ''}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }, [authEvents]);
+
   useEffect(() => {
     const load = async () => {
       if (!canManage) {
         setLoading(false);
         return;
       }
-      const [{ data: usersData, error: usersError }, { data: filialesData }] = await Promise.all([
+      const [
+        { data: usersData, error: usersError },
+        { data: filialesData },
+        { data: authEventsData, error: authEventsError },
+      ] = await Promise.all([
         supabase.from('users_profiles').select('*').order('created_at', { ascending: false }).limit(200),
         supabase.from('filiales').select('id, nom, code, actif').order('nom'),
+        supabase.from('auth_events').select('*').order('created_at', { ascending: false }).limit(100),
       ]);
 
       if (usersError) {
         setError(usersError.message);
+      }
+      if (authEventsError) {
+        setAuthEventsError(authEventsError.message);
       }
       if (usersData) {
         setUsers(usersData as UserProfile[]);
       }
       if (filialesData) {
         setFiliales(filialesData as Filiale[]);
+      }
+      if (authEventsData) {
+        setAuthEvents(authEventsData as AuthEvent[]);
       }
       setLoading(false);
     };
@@ -75,6 +102,29 @@ export function UsersManagementView() {
     if (data) {
       setUsers(data as UserProfile[]);
     }
+  };
+
+  const getUserLabel = (userId: string) => {
+    const match = users.find((u) => u.id === userId);
+    if (!match) return 'Utilisateur inconnu';
+    const name = [match.prenom, match.nom].filter(Boolean).join(' ').trim();
+    return name || match.email || userId;
+  };
+
+  const formatEventLabel = (event: AuthEvent['event']) => {
+    return event === 'signed_in' ? 'Connexion' : 'Déconnexion';
+  };
+
+  const formatEventDate = (value: string) => {
+    return new Date(value).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+  };
+
+  const formatAuthEventsError = (message: string) => {
+    const lower = message.toLowerCase();
+    if (lower.includes('auth_events')) {
+      return 'Journal des connexions indisponible: appliquez la migration auth_events puis relancez.';
+    }
+    return `Journal des connexions indisponible: ${message}`;
   };
 
   const handleCreate = async () => {
@@ -378,6 +428,67 @@ export function UsersManagementView() {
             </tbody>
           </table>
         </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold text-slate-900">Connexions récentes</h2>
+            <p className="text-sm text-slate-600">Historique des dernières connexions et déconnexions.</p>
+          </div>
+          <div className="flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-xs text-slate-700">
+            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+            {uniqueAuthEvents.length} événements
+          </div>
+        </div>
+
+        {authEventsError && (
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            {formatAuthEventsError(authEventsError)}
+          </div>
+        )}
+
+        {!authEventsError && (
+          <div className="overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr className="border-b border-slate-200">
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Utilisateur</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Action</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Appareil</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {uniqueAuthEvents.map((event) => (
+                  <tr key={event.id} className="hover:bg-slate-50 transition">
+                    <td className="py-3 px-4 text-sm font-semibold text-slate-900">
+                      {getUserLabel(event.user_id)}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-slate-700">
+                      <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                        {formatEventLabel(event.event)}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-slate-700">
+                      {formatEventDate(event.created_at)}
+                    </td>
+                    <td className="py-3 px-4 text-sm text-slate-600">
+                      {event.user_agent ? event.user_agent.slice(0, 60) : 'N/A'}
+                    </td>
+                  </tr>
+                ))}
+                {uniqueAuthEvents.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-6 text-center text-sm text-slate-500">
+                      Aucun historique de connexion pour le moment.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

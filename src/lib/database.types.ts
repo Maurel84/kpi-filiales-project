@@ -82,6 +82,32 @@ export type Tables = {
           updated_at?: string
         }
       }
+      auth_events: {
+        Row: {
+          id: string
+          user_id: string
+          event: 'signed_in' | 'signed_out'
+          user_agent: string | null
+          ip_address: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          event: 'signed_in' | 'signed_out'
+          user_agent?: string | null
+          ip_address?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          event?: 'signed_in' | 'signed_out'
+          user_agent?: string | null
+          ip_address?: string | null
+          created_at?: string
+        }
+      }
       kpis_reporting: {
         Row: {
           id: string
