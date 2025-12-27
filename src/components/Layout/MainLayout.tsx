@@ -71,7 +71,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
     { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, roles: ['all'] },
     { id: 'kpis', label: 'KPIs & Reporting', icon: BarChart3, roles: ['all'] },
     { id: 'plan-actions', label: "Plan d'actions", icon: ClipboardList, roles: ['all'] },
-    { id: 'pdm', label: 'Plans de Marché', icon: Target, roles: ['manager_filiale', 'admin_siege'] },
+    { id: 'pdm', label: 'Part de marche (PDM)', icon: Target, roles: ['manager_filiale', 'admin_siege'] },
     { id: 'forecasts', label: 'Prévisions (Forecasts)', icon: TrendingUp, roles: ['manager_filiale', 'admin_siege', 'commercial'] },
     { id: 'visites-clients', label: 'Visites & Opportunités', icon: Users, roles: ['commercial', 'manager_filiale', 'admin_siege'] },
     { id: 'stocks', label: 'Gestion des Stocks', icon: Package, roles: ['all'] },

@@ -338,47 +338,38 @@ export type Tables = {
         Row: {
           id: string
           filiale_id: string | null
-          marque_id: string
-          categorie_id: string | null
-          modele_id: string | null
+          marque: string | null
+          categorie: string | null
+          industrie: number | null
+          src: number | null
+          source_industrie_type: 'AEM TABLE' | 'WITS Shipment' | 'WITS Order' | null
           annee: number
-          source_industrie: string | null
-          source_src: string | null
-          objectif_ventes: number | null
-          commentaires: string | null
           created_by: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
           filiale_id?: string | null
-          marque_id: string
-          categorie_id?: string | null
-          modele_id?: string | null
+          marque?: string | null
+          categorie?: string | null
+          industrie?: number | null
+          src?: number | null
+          source_industrie_type?: 'AEM TABLE' | 'WITS Shipment' | 'WITS Order' | null
           annee: number
-          source_industrie?: string | null
-          source_src?: string | null
-          objectif_ventes?: number | null
-          commentaires?: string | null
           created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
           filiale_id?: string | null
-          marque_id?: string
-          categorie_id?: string | null
-          modele_id?: string | null
+          marque?: string | null
+          categorie?: string | null
+          industrie?: number | null
+          src?: number | null
+          source_industrie_type?: 'AEM TABLE' | 'WITS Shipment' | 'WITS Order' | null
           annee?: number
-          source_industrie?: string | null
-          source_src?: string | null
-          objectif_ventes?: number | null
-          commentaires?: string | null
           created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
       }
       plan_actions: {

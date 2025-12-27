@@ -4,45 +4,31 @@ import { useAuth } from '../../contexts/AuthContext';
 import { supabase } from '../../lib/supabase';
 import type { Database } from '../../lib/database.types';
 
-type StockItem = Database['public']['Tables']['stock_items']['Row'] & {
-  articles?: Database['public']['Tables']['articles']['Row'];
-};
-type Article = Pick<Database['public']['Tables']['articles']['Row'], 'id' | 'reference' | 'libelle' | 'marque' | 'modele'>;
-type Filiale = Pick<Database['public']['Tables']['filiales']['Row'], 'id' | 'nom' | 'code'>;
+type StockItem = Database['public']['Tables']['stock_items']['Row'];
 
 type StockStatus = Database['public']['Tables']['stock_items']['Row']['statut'];
 
-type StockForm = {
-  article_id: string;
-  numero_serie: string;
-  pays: string;
-  gamme: string;
-  quantite: number;
-  emplacement: string;
-  date_entree: string;
-  prix_achat_ht: number | null;
-  prix_revient: number | null;
-  statut: StockStatus;
+type StockForm = Omit<Database['public']['Tables']['stock_items']['Insert'], 'filiale_id' | 'created_by'> & {
+  filiale_id: string | null;
+  created_by: string | null;
 };
 
 const defaultForm: StockForm = {
-  article_id: '',
+  marque: '',
+  modele: '',
   numero_serie: '',
   pays: '',
   gamme: '',
-  quantite: 1,
-  emplacement: '',
   date_entree: new Date().toISOString().slice(0, 10),
-  prix_achat_ht: null,
   prix_revient: null,
   statut: 'Disponible',
+  filiale_id: null,
+  created_by: null,
 };
 
 export function StocksView() {
   const { profile } = useAuth();
   const [stocks, setStocks] = useState<StockItem[]>([]);
-  const [articles, setArticles] = useState<Article[]>([]);
-  const [filiales, setFiliales] = useState<Filiale[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StockStatus | 'all'>('all');
@@ -56,7 +42,7 @@ export function StocksView() {
 
     let query = supabase
       .from('stock_items')
-      .select('*, articles(*)')
+      .select('id, filiale_id, statut, marque, modele, numero_serie, gamme, pays, date_entree, prix_revient')
       .order('date_entree', { ascending: false });
 
     if (profile.role !== 'admin_siege' && profile.filiale_id) {
@@ -69,7 +55,7 @@ export function StocksView() {
 
     const { data, error } = await query;
     if (!error && data) {
-      setStocks(data as unknown as StockItem[]);
+      setStocks(data as StockItem[]);
     }
     setLoading(false);
   }, [profile, statusFilter]);
@@ -79,26 +65,18 @@ export function StocksView() {
   }, [loadStocks]);
 
   useEffect(() => {
-    const loadLookups = async () => {
-      const [articlesRes, filialesRes] = await Promise.all([
-        supabase
-          .from('articles')
-          .select('*')
-          .order('reference')
-          .limit(500),
-        supabase.from('filiales').select('id, nom, code').order('nom'),
-      ]);
-
-      if (articlesRes.data) setArticles(articlesRes.data as Article[]);
-      if (filialesRes.data) setFiliales(filialesRes.data as Filiale[]);
-    };
-    loadLookups();
-  }, []);
+    if (!profile) return;
+    setFormData((prev) => ({
+      ...prev,
+      filiale_id: profile.filiale_id || null,
+      created_by: profile.id,
+    }));
+  }, [profile]);
 
   const submitStock = async () => {
     if (!profile) return;
-    if (!formData.article_id) {
-      setSubmitError('Article requis.');
+    if (!formData.marque || !formData.modele) {
+      setSubmitError('Marque et modele requis.');
       return;
     }
     if (!profile.filiale_id) {
@@ -109,15 +87,16 @@ export function StocksView() {
     setSubmitLoading(true);
 
     const payload = {
-      ...formData,
-      quantite: Number(formData.quantite) || 1,
-      prix_achat_ht: formData.prix_achat_ht ? Number(formData.prix_achat_ht) : null,
-      prix_revient: formData.prix_revient ? Number(formData.prix_revient) : null,
-      filiale_id: profile.filiale_id,
+      marque: formData.marque,
+      modele: formData.modele,
       numero_serie: formData.numero_serie || null,
-      emplacement: formData.emplacement || null,
       pays: formData.pays || null,
       gamme: formData.gamme || null,
+      date_entree: formData.date_entree || new Date().toISOString().slice(0, 10),
+      prix_revient: formData.prix_revient ? Number(formData.prix_revient) : null,
+      statut: formData.statut,
+      filiale_id: profile.filiale_id,
+      created_by: profile.id,
     };
 
     const { error } = await supabase.from('stock_items').insert(payload);
@@ -131,6 +110,8 @@ export function StocksView() {
     setFormData({
       ...defaultForm,
       date_entree: new Date().toISOString().slice(0, 10),
+      filiale_id: profile.filiale_id,
+      created_by: profile.id,
     });
     loadStocks();
   };
@@ -143,11 +124,10 @@ export function StocksView() {
   };
 
   const filteredStocks = stocks.filter((stock) => {
-    if (!stock.articles) return false;
     const term = searchTerm.toLowerCase();
     return (
-      (stock.articles.libelle || '').toLowerCase().includes(term) ||
-      (stock.articles.reference || '').toLowerCase().includes(term) ||
+      (stock.marque || '').toLowerCase().includes(term) ||
+      (stock.modele || '').toLowerCase().includes(term) ||
       (stock.numero_serie || '').toLowerCase().includes(term) ||
       (stock.gamme || '').toLowerCase().includes(term) ||
       (stock.pays || '').toLowerCase().includes(term)
@@ -165,17 +145,6 @@ export function StocksView() {
     return badges[status] || 'bg-gray-100 text-gray-800';
   };
 
-  const filialeMap = useMemo(
-    () => new Map(filiales.map((filiale) => [filiale.id, filiale.nom || filiale.code || 'Filiale'])),
-    [filiales]
-  );
-  const getArticleLabel = (article: Article) => {
-    const base = [article.reference, article.libelle].filter(Boolean).join(' - ');
-    const details = [article.marque, article.modele].filter(Boolean).join(' ');
-    if (base && details) return `${base} (${details})`;
-    return base || details || 'Article';
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -190,7 +159,7 @@ export function StocksView() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-slate-900 mb-2">Gestion des Stocks</h1>
-            <p className="text-slate-600">ETAT STOCK : Statut, Marque/Modèle, S/N, Gamme, Pays, Date entrée, Prix de revient HT</p>
+            <p className="text-slate-600">ETAT STOCK : Statut, Marque, Modele, S/N, Gamme, Pays, Date entree, Prix de revient HT</p>
           </div>
           <button
             onClick={() => setIsModalOpen(true)}
@@ -225,7 +194,7 @@ export function StocksView() {
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-600">Réservés</p>
+                <p className="text-sm text-slate-600">Reserves</p>
                 <p className="text-2xl font-bold text-blue-600">
                   {stocks.filter((s) => s.statut === 'Reserve').length}
                 </p>
@@ -236,7 +205,7 @@ export function StocksView() {
           <div className="bg-white rounded-lg border border-slate-200 p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-600">Obsolètes (+12 mois)</p>
+                <p className="text-sm text-slate-600">Obsoletes (+12 mois)</p>
                 <p className="text-2xl font-bold text-red-600">
                   {stocks.filter((s) => calculateMonthsInStock(s.date_entree) > 12).length}
                 </p>
@@ -252,7 +221,7 @@ export function StocksView() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
               <input
                 type="text"
-                placeholder="Rechercher par référence, libellé ou numéro de série..."
+                placeholder="Rechercher par marque, modele ou S/N..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
@@ -266,10 +235,10 @@ export function StocksView() {
             >
               <option value="all">Tous les statuts</option>
               <option value="Disponible">Disponible</option>
-              <option value="Reserve">Réservé</option>
+              <option value="Reserve">Reserve</option>
               <option value="Vendu">Vendu</option>
               <option value="Transfert">Transfert</option>
-              <option value="Obsolete">Obsolète</option>
+              <option value="Obsolete">Obsolete</option>
             </select>
 
             <button className="flex items-center space-x-2 px-4 py-2 border border-slate-300 rounded-lg hover:bg-slate-50 transition">
@@ -282,14 +251,15 @@ export function StocksView() {
             <table className="w-full">
               <thead>
                 <tr className="border-b border-slate-200">
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marque / Modèle</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marque</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Modele</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">S/N</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Gamme</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Pays</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Statut</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date d'entrée</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date d'entree</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Prix de revient HT</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Âge (mois)</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Age (mois)</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200">
@@ -298,25 +268,14 @@ export function StocksView() {
                   const isObsolete = monthsInStock > 12;
 
                   return (
-                    <tr
-                      key={stock.id}
-                      className={`hover:bg-slate-50 transition ${isObsolete ? 'bg-red-50/50' : ''}`}
-                    >
-                      <td className="py-3 px-4 text-sm text-slate-900">
-                        <div className="font-medium">{stock.articles?.marque || '-'}</div>
-                        <div className="text-xs text-slate-600">{stock.articles?.modele || stock.articles?.libelle}</div>
-                      </td>
+                    <tr key={stock.id} className={`hover:bg-slate-50 transition ${isObsolete ? 'bg-red-50/50' : ''}`}>
+                      <td className="py-3 px-4 text-sm text-slate-900">{stock.marque || '-'}</td>
+                      <td className="py-3 px-4 text-sm text-slate-700">{stock.modele || '-'}</td>
                       <td className="py-3 px-4 text-sm text-slate-700">{stock.numero_serie || '-'}</td>
                       <td className="py-3 px-4 text-sm text-slate-700">{stock.gamme || '-'}</td>
-                      <td className="py-3 px-4 text-sm text-slate-700">
-                        {stock.pays || filialeMap.get(stock.filiale_id) || '-'}
-                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">{stock.pays || '-'}</td>
                       <td className="py-3 px-4">
-                        <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(
-                            stock.statut
-                          )}`}
-                        >
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusBadge(stock.statut)}`}>
                           {stock.statut}
                         </span>
                       </td>
@@ -324,18 +283,10 @@ export function StocksView() {
                         {new Date(stock.date_entree).toLocaleDateString('fr-FR')}
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-900">
-                        {stock.prix_revient?.toLocaleString() || stock.prix_achat_ht?.toLocaleString() || '-'}
+                        {stock.prix_revient?.toLocaleString() || '-'}
                       </td>
                       <td className="py-3 px-4">
-                        <span
-                          className={`text-sm font-medium ${
-                            isObsolete
-                              ? 'text-red-600'
-                              : monthsInStock > 6
-                              ? 'text-amber-600'
-                              : 'text-slate-900'
-                          }`}
-                        >
+                        <span className={`text-sm font-medium ${isObsolete ? 'text-red-600' : monthsInStock > 6 ? 'text-amber-600' : 'text-slate-900'}`}>
                           {monthsInStock}
                           {isObsolete && <AlertTriangle className="w-4 h-4 inline ml-1" />}
                         </span>
@@ -359,79 +310,58 @@ export function StocksView() {
       {isModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
-            <button
-              onClick={() => setIsModalOpen(false)}
-              className="absolute right-4 top-4 text-slate-500 hover:text-slate-800"
-            >
+            <button onClick={() => setIsModalOpen(false)} className="absolute right-4 top-4 text-slate-500 hover:text-slate-800">
               <X className="w-5 h-5" />
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Ajouter au stock</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Article</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.article_id}
-                  onChange={(e) => setFormData({ ...formData, article_id: e.target.value })}
-                >
-                  <option value="">Sélectionner un article</option>
-                  {articles.map((article) => (
-                    <option key={article.id} value={article.id}>
-                      {getArticleLabel(article)}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Numéro de série</label>
+                <label className="text-sm font-medium text-slate-700">Marque</label>
                 <input
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.numero_serie}
+                  value={formData.marque || ''}
+                  onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Modele</label>
+                <input
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  value={formData.modele || ''}
+                  onChange={(e) => setFormData({ ...formData, modele: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">S/N</label>
+                <input
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  value={formData.numero_serie || ''}
                   onChange={(e) => setFormData({ ...formData, numero_serie: e.target.value })}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Gamme (libellé)</label>
+                <label className="text-sm font-medium text-slate-700">Gamme</label>
                 <input
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.gamme}
+                  value={formData.gamme || ''}
                   onChange={(e) => setFormData({ ...formData, gamme: e.target.value })}
-                  placeholder="Ex: STRADDLE, Tracteurs..."
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Pays / Filiale</label>
+                <label className="text-sm font-medium text-slate-700">Pays</label>
                 <input
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.pays}
+                  value={formData.pays || ''}
                   onChange={(e) => setFormData({ ...formData, pays: e.target.value })}
-                  placeholder="Ex: Gabon, Cameroun"
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Quantité</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.quantite}
-                  onChange={(e) => setFormData({ ...formData, quantite: Number(e.target.value) })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Emplacement</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.emplacement}
-                  onChange={(e) => setFormData({ ...formData, emplacement: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Date d'entrée</label>
+                <label className="text-sm font-medium text-slate-700">Date d'entree</label>
                 <input
                   type="date"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.date_entree}
+                  value={formData.date_entree || ''}
                   onChange={(e) => setFormData({ ...formData, date_entree: e.target.value })}
                 />
               </div>
@@ -443,32 +373,19 @@ export function StocksView() {
                   onChange={(e) => setFormData({ ...formData, statut: e.target.value as StockStatus })}
                 >
                   <option value="Disponible">Disponible</option>
-                  <option value="Reserve">Réservé</option>
+                  <option value="Reserve">Reserve</option>
                   <option value="Vendu">Vendu</option>
                   <option value="Transfert">Transfert</option>
-                  <option value="Obsolete">Obsolète</option>
+                  <option value="Obsolete">Obsolete</option>
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Prix achat HT</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.prix_achat_ht ?? ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, prix_achat_ht: Number(e.target.value) || null })
-                  }
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Prix de revient</label>
+                <label className="text-sm font-medium text-slate-700">Prix de revient HT</label>
                 <input
                   type="number"
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                   value={formData.prix_revient ?? ''}
-                  onChange={(e) =>
-                    setFormData({ ...formData, prix_revient: Number(e.target.value) || null })
-                  }
+                  onChange={(e) => setFormData({ ...formData, prix_revient: Number(e.target.value) || null })}
                 />
               </div>
             </div>
@@ -489,7 +406,7 @@ export function StocksView() {
               </button>
               <button
                 onClick={submitStock}
-                disabled={submitLoading || !formData.article_id}
+                disabled={submitLoading || !formData.marque || !formData.modele}
                 className="px-5 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-yellow-600 text-white font-semibold shadow hover:from-amber-600 hover:to-yellow-700 disabled:opacity-60"
               >
                 {submitLoading ? 'Enregistrement...' : 'Enregistrer'}

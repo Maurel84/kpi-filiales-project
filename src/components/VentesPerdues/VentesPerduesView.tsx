@@ -23,9 +23,12 @@ export function VentesPerduesView() {
     article_id: '',
     montant_estime: 0,
     motif_perte: 'Prix',
-    concurrent: '',
     date_opportunite: defaultDate(),
-    commentaires: '',
+    a_participe: true,
+    marque_concurrent: '',
+    modele_concurrent: '',
+    prix_concurrent: 0,
+    commentaires_analyse: '',
   });
 
   useEffect(() => {
@@ -92,8 +95,12 @@ export function VentesPerduesView() {
       article_id: formData.article_id || null,
       montant_estime: formData.montant_estime ? Number(formData.montant_estime) : null,
       motif_perte: formData.motif_perte as LostSale['motif_perte'],
-      concurrent: formData.concurrent || null,
-      commentaires: formData.commentaires || null,
+      a_participe: formData.a_participe,
+      marque_concurrent: formData.marque_concurrent || null,
+      modele_concurrent: formData.modele_concurrent || null,
+      prix_concurrent: formData.prix_concurrent ? Number(formData.prix_concurrent) : null,
+      commentaires_analyse: formData.commentaires_analyse || null,
+      commentaires: formData.commentaires_analyse || null,
       date_opportunite: formData.date_opportunite || defaultDate(),
       filiale_id: profile.filiale_id,
       created_by: profile.id,
@@ -106,7 +113,16 @@ export function VentesPerduesView() {
     }
     setIsModalOpen(false);
     setSubmitLoading(false);
-    setFormData({ ...formData, client_potentiel: '', article_id: '', concurrent: '', commentaires: '' });
+    setFormData({
+      ...formData,
+      client_potentiel: '',
+      article_id: '',
+      a_participe: true,
+      marque_concurrent: '',
+      modele_concurrent: '',
+      prix_concurrent: 0,
+      commentaires_analyse: '',
+    });
     const query = supabase.from('ventes_perdues').select('*').order('date_opportunite', { ascending: false });
     const { data } = profile.role === 'admin_siege'
       ? await query.limit(50)
@@ -147,7 +163,10 @@ export function VentesPerduesView() {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Motif</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Montant estimé</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Concurrent</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Participation</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marque concurrence</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Modele concurrence</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Prix concurrence</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Commentaires</th>
               </tr>
             </thead>
@@ -164,17 +183,24 @@ export function VentesPerduesView() {
                     </span>
                   </td>
                   <td className="py-3 px-4 text-sm text-slate-900">
-                    {item.montant_estime ? `${item.montant_estime.toLocaleString()} XAF` : '—'}
+                    {item.montant_estime ? `${item.montant_estime.toLocaleString()} XAF` : 'N/A'}
                   </td>
-                  <td className="py-3 px-4 text-sm text-slate-700">{item.concurrent || '—'}</td>
+                  <td className="py-3 px-4 text-sm text-slate-700">
+                    {item.a_participe === null ? 'N/A' : item.a_participe ? 'Participe' : 'Non participe'}
+                  </td>
+                  <td className="py-3 px-4 text-sm text-slate-700">{item.marque_concurrent || item.concurrent || 'N/A'}</td>
+                  <td className="py-3 px-4 text-sm text-slate-700">{item.modele_concurrent || 'N/A'}</td>
+                  <td className="py-3 px-4 text-sm text-slate-700">
+                    {item.prix_concurrent ? `${item.prix_concurrent.toLocaleString()} XAF` : 'N/A'}
+                  </td>
                   <td className="py-3 px-4 text-sm text-slate-600 max-w-xs">
-                    {item.commentaires || '—'}
+                    {item.commentaires_analyse || item.commentaires || 'N/A'}
                   </td>
                 </tr>
               ))}
               {items.length === 0 && (
                 <tr>
-                  <td className="py-6 text-center text-slate-500 text-sm" colSpan={6}>
+                  <td className="py-6 text-center text-slate-500 text-sm" colSpan={9}>
                     Aucune vente perdue enregistrée.
                   </td>
                 </tr>
@@ -252,12 +278,25 @@ export function VentesPerduesView() {
                 </select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Concurrent</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.concurrent}
-                  onChange={(e) => setFormData({ ...formData, concurrent: e.target.value })}
-                />
+                <label className="text-sm font-medium text-slate-700">Participation</label>
+                <div className="flex items-center gap-4 rounded-lg border border-slate-200 px-3 py-2">
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="radio"
+                      checked={formData.a_participe === true}
+                      onChange={() => setFormData({ ...formData, a_participe: true })}
+                    />
+                    Participe
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700">
+                    <input
+                      type="radio"
+                      checked={formData.a_participe === false}
+                      onChange={() => setFormData({ ...formData, a_participe: false })}
+                    />
+                    Non participe
+                  </label>
+                </div>
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">Date opportunité</label>
@@ -268,12 +307,37 @@ export function VentesPerduesView() {
                   onChange={(e) => setFormData({ ...formData, date_opportunite: e.target.value })}
                 />
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Marque de la concurrence</label>
+                <input
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  value={formData.marque_concurrent}
+                  onChange={(e) => setFormData({ ...formData, marque_concurrent: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Modele de la concurrence</label>
+                <input
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  value={formData.modele_concurrent}
+                  onChange={(e) => setFormData({ ...formData, modele_concurrent: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-slate-700">Prix de la concurrence</label>
+                <input
+                  type="number"
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                  value={formData.prix_concurrent}
+                  onChange={(e) => setFormData({ ...formData, prix_concurrent: Number(e.target.value) })}
+                />
+              </div>
               <div className="space-y-2 md:col-span-2">
                 <label className="text-sm font-medium text-slate-700">Commentaires</label>
                 <textarea
                   className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.commentaires}
-                  onChange={(e) => setFormData({ ...formData, commentaires: e.target.value })}
+                  value={formData.commentaires_analyse}
+                  onChange={(e) => setFormData({ ...formData, commentaires_analyse: e.target.value })}
                 />
               </div>
             </div>

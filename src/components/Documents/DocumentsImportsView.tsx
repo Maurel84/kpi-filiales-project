@@ -19,7 +19,7 @@ const initialDocs: DocItem[] = [
   { name: 'ETATS COMMANDES FOURNISSEURS.pdf', type: 'commande', status: 'pending' },
   { name: 'ETATS DES VENTES.pdf', type: 'vente', status: 'pending' },
   { name: 'PDM KALMAR.pdf', type: 'pdm', status: 'pending' },
-  { name: 'PDM MANIYOU.pdf', type: 'pdm', status: 'pending' },
+  { name: 'PDM MANITOU.pdf', type: 'pdm', status: 'pending' },
   { name: 'PDM MASSEY FERGUSON.pdf', type: 'pdm', status: 'pending' },
   { name: 'PLAN D\'ACTION.pdf', type: 'workflow', status: 'pending' },
   { name: 'VISITES CLIENTS.pdf', type: 'visite', status: 'pending' },
