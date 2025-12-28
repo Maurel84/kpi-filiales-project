@@ -33,6 +33,7 @@ type NotificationItem = {
   createdAt: string;
   read: boolean;
   tone?: 'info' | 'success' | 'warning';
+  view?: string;
 };
 
 interface MainLayoutProps {
@@ -67,7 +68,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
   const fileInputRef = useRef<HTMLInputElement>(null);
   const avatarBucket = import.meta.env.VITE_AVATAR_BUCKET || 'avatars';
 
-  const menuItems = [
+  const menuItems = useMemo(() => [
     { id: 'dashboard', label: 'Tableau de bord', icon: LayoutDashboard, roles: ['all'] },
     { id: 'kpis', label: 'KPIs & Reporting', icon: BarChart3, roles: ['all'] },
     { id: 'plan-actions', label: "Plan d'actions", icon: ClipboardList, roles: ['all'] },
@@ -88,12 +89,15 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
     { id: 'users', label: 'Utilisateurs', icon: ShieldCheck, roles: ['admin_siege'] },
     { id: 'auth-events', label: 'Journal des connexions', icon: FileText, roles: ['admin_siege', 'manager_filiale'] },
     { id: 'data-exports', label: 'Exports', icon: FileText, roles: ['admin_siege'] },
-  ];
+  ], []);
 
-  const filteredMenuItems = menuItems.filter(item => {
-    if (item.roles.includes('all')) return true;
-    return profile && item.roles.includes(profile.role);
-  });
+  const filteredMenuItems = useMemo(() => {
+    return menuItems.filter((item) => {
+      if (item.roles.includes('all')) return true;
+      return profile && item.roles.includes(profile.role);
+    });
+  }, [menuItems, profile]);
+  const allowedViewIds = useMemo(() => new Set(filteredMenuItems.map((item) => item.id)), [filteredMenuItems]);
 
   const getRoleBadge = (role: string) => {
     const badges = {
@@ -170,20 +174,183 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
 
   useEffect(() => {
     if (!profile) return;
-    setNotifications((prev) => {
-      if (prev.length > 0) return prev;
-      return [
-        {
-          id: 'welcome',
-          title: 'Bienvenue',
-          message: displayName ? `Bonjour ${displayName}, ravi de vous revoir.` : 'Votre espace est prêt.',
+    let isMounted = true;
+
+    const loadNotifications = async () => {
+      const canSee = (viewId: string) => allowedViewIds.has(viewId);
+      const filialeFilter =
+        profile.role === 'admin_siege' ? {} : profile.filiale_id ? { filiale_id: profile.filiale_id } : {};
+      const now = new Date();
+      const todayIso = now.toISOString().slice(0, 10);
+      const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
+      const endMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
+      const endWindow = new Date(now);
+      endWindow.setDate(endWindow.getDate() + 30);
+      const endWindowIso = endWindow.toISOString().slice(0, 10);
+      const weekEnd = new Date(now);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      const weekEndIso = weekEnd.toISOString().slice(0, 10);
+      const obsoleteDate = new Date(now);
+      obsoleteDate.setMonth(obsoleteDate.getMonth() - 12);
+      const obsoleteIso = obsoleteDate.toISOString().slice(0, 10);
+
+      const kpisPromise = canSee('kpis')
+        ? supabase
+            .from('kpis_reporting')
+            .select('id', { count: 'exact', head: true })
+            .in('status', ['Draft', 'Submitted'])
+            .match(filialeFilter)
+        : Promise.resolve({ count: 0, error: null });
+      const actionsPromise = canSee('plan-actions')
+        ? supabase
+            .from('plan_actions')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .not('statut', 'in', '("Termine","Annule")')
+            .or(`statut.eq.Retard,date_fin_prevue.lt.${todayIso}`)
+        : Promise.resolve({ count: 0, error: null });
+      const stockPromise = canSee('stocks')
+        ? supabase
+            .from('stock_items')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .lt('date_entree', obsoleteIso)
+        : Promise.resolve({ count: 0, error: null });
+      const ventesPromise = canSee('ventes')
+        ? supabase
+            .from('ventes')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .gte('date_vente', startMonth)
+            .lt('date_vente', endMonth)
+        : Promise.resolve({ count: 0, error: null });
+      const opportunitesPromise = canSee('visites-clients')
+        ? supabase
+            .from('opportunites')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .gte('date_closing_prevue', todayIso)
+            .lt('date_closing_prevue', endWindowIso)
+            .not('statut', 'in', '("Gagne","Gagnee","Perdu","Perdue","Abandonne","Abandonnee")')
+        : Promise.resolve({ count: 0, error: null });
+      const visitesPromise = canSee('visites-clients')
+        ? supabase
+            .from('visites_clients')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .gte('date_visite', todayIso)
+            .lte('date_visite', weekEndIso)
+        : Promise.resolve({ count: 0, error: null });
+
+      const [kpisRes, actionsRes, stockRes, ventesRes, opportunitesRes, visitesRes] = await Promise.all([
+        kpisPromise,
+        actionsPromise,
+        stockPromise,
+        ventesPromise,
+        opportunitesPromise,
+        visitesPromise,
+      ]);
+
+      if (!isMounted) return;
+
+      const notificationsList: NotificationItem[] = [];
+      const kpisPending = kpisRes.count || 0;
+      const actionsLate = actionsRes.count || 0;
+      const stockRisk = stockRes.count || 0;
+      const ventesMonth = ventesRes.count || 0;
+      const opportunitesSoon = opportunitesRes.count || 0;
+      const visitesWeek = visitesRes.count || 0;
+
+      if (kpisPending > 0) {
+        notificationsList.push({
+          id: `kpis-${kpisPending}`,
+          title: 'KPIs en attente',
+          message: `${kpisPending} KPI(s) a valider.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'kpis',
+        });
+      }
+
+      if (actionsLate > 0) {
+        notificationsList.push({
+          id: `actions-${actionsLate}`,
+          title: 'Actions en retard',
+          message: `${actionsLate} action(s) depassees.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'plan-actions',
+        });
+      }
+
+      if (stockRisk > 0) {
+        notificationsList.push({
+          id: `stock-${stockRisk}`,
+          title: 'Stock a risque',
+          message: `${stockRisk} article(s) en stock > 12 mois.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'stocks',
+        });
+      }
+
+      if (opportunitesSoon > 0) {
+        notificationsList.push({
+          id: `opportunites-${opportunitesSoon}`,
+          title: 'Opportunites a cloturer',
+          message: `${opportunitesSoon} opportunite(s) a cloturer sous 30 jours.`,
           createdAt: new Date().toISOString(),
           read: false,
           tone: 'info',
-        },
-      ];
-    });
-  }, [displayName, profile]);
+          view: 'visites-clients',
+        });
+      }
+
+      if (visitesWeek > 0) {
+        notificationsList.push({
+          id: `visites-${visitesWeek}`,
+          title: 'Visites cette semaine',
+          message: `${visitesWeek} visite(s) planifiees sur 7 jours.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'info',
+          view: 'visites-clients',
+        });
+      }
+
+      if (ventesMonth > 0) {
+        notificationsList.push({
+          id: `ventes-${ventesMonth}`,
+          title: 'Ventes du mois',
+          message: `${ventesMonth} vente(s) enregistrees ce mois.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'success',
+          view: 'ventes',
+        });
+      }
+
+      setNotifications((prev) => {
+        const existingRead = new Map(prev.map((item) => [item.id, item.read]));
+        return notificationsList.map((item) => ({
+          ...item,
+          read: existingRead.get(item.id) ?? false,
+        }));
+      });
+    };
+
+    loadNotifications();
+    const interval = typeof window === 'undefined' ? null : window.setInterval(loadNotifications, 5 * 60 * 1000);
+    return () => {
+      isMounted = false;
+      if (interval) {
+        window.clearInterval(interval);
+      }
+    };
+  }, [profile?.filiale_id, profile?.role, allowedViewIds]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -279,6 +446,14 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
     setNotifications((prev) =>
       prev.map((item) => (item.id === id ? { ...item, read: true } : item))
     );
+  };
+
+  const handleNotificationAction = (item: NotificationItem) => {
+    markNotificationRead(item.id);
+    if (item.view && onViewChange) {
+      onViewChange(item.view);
+      setProfileMenuOpen(false);
+    }
   };
 
   const formatNotificationDate = (value: string) => {
@@ -645,7 +820,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
                                   return (
                                     <button
                                       key={item.id}
-                                      onClick={() => markNotificationRead(item.id)}
+                                      onClick={() => handleNotificationAction(item)}
                                       className="w-full text-left rounded-lg border border-slate-200 p-3 hover:border-amber-200 hover:bg-amber-50/40 transition"
                                     >
                                       <div className="flex items-start gap-3">
