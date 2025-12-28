@@ -20,6 +20,8 @@ import { InspectionsTechniquesView } from './components/Inspections/InspectionsT
 import { BudgetsView } from './components/Budgets/BudgetsView';
 import { SessionsInterfilialesView } from './components/SessionsInterfiliales/SessionsInterfilialesView';
 import { UsersManagementView } from './components/Admin/UsersManagementView';
+import { AuthEventsView } from './components/Admin/AuthEventsView';
+import { DataExportsView } from './components/Admin/DataExportsView';
 import { Loader2 } from 'lucide-react';
 import type { Database } from './lib/database.types';
 
@@ -67,6 +69,8 @@ function AppContent() {
     'documents-imports': ['admin_siege'],
     'power-bi': ['admin_siege', 'manager_filiale'],
     users: ['admin_siege'],
+    'auth-events': ['admin_siege', 'manager_filiale'],
+    'data-exports': ['admin_siege'],
   };
 
   const isViewAllowed = (view: string, role?: Role | null) => {
@@ -169,7 +173,11 @@ function AppContent() {
       case 'sessions-inter':
         return <SessionsInterfilialesView />;
       case 'users':
-        return <UsersManagementView />;
+        return <UsersManagementView onNavigate={setCurrentView} />;
+      case 'auth-events':
+        return <AuthEventsView />;
+      case 'data-exports':
+        return <DataExportsView />;
       default:
         return <Dashboard onNavigate={setCurrentView} />;
     }

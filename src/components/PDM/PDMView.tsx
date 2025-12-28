@@ -18,6 +18,23 @@ type PDMEntryRow = {
 
 const SOURCE_OPTIONS = ['AEM TABLE', 'WITS Shipment', 'WITS Order'];
 
+const NARDI_CATEGORIES = [
+  'Lavorazione e preparazione del terreno',
+  'Aratri',
+  'Coltivatori',
+  'Coltivatori specializzati vigneto/frutteto',
+  'Erpici',
+  'Rulli Cambridge',
+  'Sarchiatrici',
+  'Seminatrici',
+  'Semina e post semina',
+  'Trinciatrici',
+  'Zappatrici',
+  'Fertilizzazione',
+  'Concimatori',
+  'Manutenzione del verde',
+];
+
 const CATEGORY_BY_MARQUE: Record<string, string[]> = {
   KALMAR: ['FLT', 'RST', 'ECH', 'TT', 'STRADDLE'],
   MANITOU: [
@@ -52,7 +69,7 @@ const CATEGORY_BY_MARQUE: Record<string, string[]> = {
     'HARVESTER COMBINE',
     'BALER',
   ],
-  NARDI: [],
+  NARDI: NARDI_CATEGORIES,
 };
 
 const CATEGORY_DEFINITIONS: Record<string, { label: string; description: string }[]> = {
@@ -109,9 +126,25 @@ const CATEGORY_DEFINITIONS: Record<string, { label: string; description: string 
   ],
   NARDI: [
     {
-      label: 'A definir',
-      description: 'Categories NARDI non confirmees. Merci de fournir la liste officielle.',
+      label: 'Lavorazione e preparazione del terreno',
+      description: 'Travail du sol et preparation avant semis.',
     },
+    { label: 'Aratri', description: 'Charrues pour le labour.' },
+    { label: 'Coltivatori', description: 'Outils de travail du sol en surface.' },
+    {
+      label: 'Coltivatori specializzati vigneto/frutteto',
+      description: 'Outils specialises pour vignes et vergers.',
+    },
+    { label: 'Erpici', description: 'Herses pour l\'affinage du sol.' },
+    { label: 'Rulli Cambridge', description: 'Rouleaux pour nivellement et compactage.' },
+    { label: 'Sarchiatrici', description: 'Bineuses pour desherbage mecanique.' },
+    { label: 'Seminatrici', description: 'Semis des cultures.' },
+    { label: 'Semina e post semina', description: 'Semis et operations post-semis.' },
+    { label: 'Trinciatrici', description: 'Broyeurs.' },
+    { label: 'Zappatrici', description: 'Fraises rotatives.' },
+    { label: 'Fertilizzazione', description: 'Apport d\'engrais.' },
+    { label: 'Concimatori', description: 'Epandeurs d\'engrais.' },
+    { label: 'Manutenzione del verde', description: 'Entretien des espaces verts.' },
   ],
 };
 
@@ -488,6 +521,18 @@ export function PDMView() {
                     </div>
                   </div>
                 ))}
+                <div className="pt-3 border-t border-slate-200 text-xs text-slate-500">
+                  Source categories NARDI:&nbsp;
+                  <a
+                    href="https://nardigroup.com"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-amber-600 hover:text-amber-700 font-semibold"
+                  >
+                    nardigroup.com
+                  </a>
+                  &nbsp;(catalogue des moyens agricoles).
+                </div>
               </div>
             )}
           </div>

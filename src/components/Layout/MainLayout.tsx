@@ -86,6 +86,8 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
     { id: 'documents-imports', label: 'Documents & Imports', icon: FileText, roles: ['admin_siege'] },
     { id: 'power-bi', label: 'Power BI', icon: BarChart3, roles: ['admin_siege', 'manager_filiale'] },
     { id: 'users', label: 'Utilisateurs', icon: ShieldCheck, roles: ['admin_siege'] },
+    { id: 'auth-events', label: 'Journal des connexions', icon: FileText, roles: ['admin_siege', 'manager_filiale'] },
+    { id: 'data-exports', label: 'Exports', icon: FileText, roles: ['admin_siege'] },
   ];
 
   const filteredMenuItems = menuItems.filter(item => {
@@ -182,6 +184,11 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
       ];
     });
   }, [displayName, profile]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [currentView]);
 
   useEffect(() => {
     if (!profileMenuOpen) return;
@@ -676,7 +683,9 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
 
           <main className="flex-1 px-6 lg:px-10 pb-12">
             <div className="mx-auto max-w-7xl space-y-6">
-              {children}
+              <div key={currentView} className="animate-fade-up">
+                {children}
+              </div>
             </div>
           </main>
         </div>

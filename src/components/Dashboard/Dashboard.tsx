@@ -44,19 +44,23 @@ interface DashboardProps {
 const toneStyles = {
   amber: {
     bg: 'from-amber-50 via-white to-white',
-    icon: 'text-amber-600'
+    darkBg: 'dark:from-amber-900/30 dark:via-slate-900/80 dark:to-slate-900',
+    icon: 'text-amber-600 dark:text-amber-200'
   },
   blue: {
     bg: 'from-sky-50 via-white to-white',
-    icon: 'text-sky-600'
+    darkBg: 'dark:from-sky-900/30 dark:via-slate-900/80 dark:to-slate-900',
+    icon: 'text-sky-600 dark:text-sky-200'
   },
   gold: {
     bg: 'from-yellow-50 via-white to-white',
-    icon: 'text-yellow-600'
+    darkBg: 'dark:from-yellow-900/30 dark:via-slate-900/80 dark:to-slate-900',
+    icon: 'text-yellow-600 dark:text-yellow-200'
   },
   purple: {
     bg: 'from-indigo-50 via-white to-white',
-    icon: 'text-indigo-600'
+    darkBg: 'dark:from-indigo-900/30 dark:via-slate-900/80 dark:to-slate-900',
+    icon: 'text-indigo-600 dark:text-indigo-200'
   }
 };
 
@@ -288,8 +292,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
   }) => {
     const toneStyle = toneStyles[tone];
     return (
-      <div className="relative overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-lg shadow-slate-900/5">
-        <div className={`absolute inset-0 bg-gradient-to-br ${toneStyle.bg} opacity-80`} />
+      <div className="relative overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-lg shadow-slate-900/5 dark:border-slate-800/70 dark:bg-slate-900/70">
+        <div className={`absolute inset-0 bg-gradient-to-br ${toneStyle.bg} ${toneStyle.darkBg} opacity-80`} />
         <div className="relative p-6 flex items-start justify-between">
           <div className="flex-1">
             <p className="text-sm font-semibold text-slate-600 mb-1">{title}</p>
@@ -298,7 +302,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
               <p className="text-sm text-slate-600 mt-1">{subtitle}</p>
             )}
           </div>
-          <div className="p-3 rounded-xl bg-white/80 shadow-inner">
+          <div className="p-3 rounded-xl bg-white/80 shadow-inner dark:bg-slate-900/60 dark:border dark:border-slate-800/60">
             <Icon className={`w-6 h-6 ${toneStyle.icon}`} />
           </div>
         </div>
@@ -416,9 +420,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6">
+        <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">
           <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5 text-amber-600" />
+            <CheckCircle2 className="w-5 h-5 text-amber-600 dark:text-amber-200" />
             Actions rapides
           </h2>
           <div className="grid sm:grid-cols-3 gap-4">
@@ -444,70 +448,70 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6">
+        <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">
           <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-amber-600" />
+            <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-200" />
             Priorités opérations
           </h2>
           <div className="space-y-3">
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-              <AlertCircle className="w-5 h-5 text-amber-600 mt-0.5" />
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 flex items-start gap-3 dark:bg-amber-900/25 dark:border-amber-700/60">
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-200 mt-0.5" />
               <div>
-                <p className="font-semibold text-amber-900">Stock à risque</p>
-                <p className="text-sm text-amber-800">
+                <p className="font-semibold text-amber-900 dark:text-amber-100">Stock à risque</p>
+                <p className="text-sm text-amber-800 dark:text-amber-200">
                   {stats.stockObsolete} article(s) en stock depuis plus de 12 mois
                 </p>
               </div>
             </div>
             {stats.kpisPending > 0 && (
-              <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-3 flex items-start gap-3">
-                <Clock className="w-5 h-5 text-sky-600 mt-0.5" />
+              <div className="rounded-xl border border-sky-200 bg-sky-50/80 px-4 py-3 flex items-start gap-3 dark:bg-sky-900/25 dark:border-sky-700/60">
+                <Clock className="w-5 h-5 text-sky-600 dark:text-sky-200 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-sky-900">KPIs en attente</p>
-                  <p className="text-sm text-sky-800">
+                  <p className="font-semibold text-sky-900 dark:text-sky-100">KPIs en attente</p>
+                  <p className="text-sm text-sky-800 dark:text-sky-200">
                     {stats.kpisPending} KPI(s) nécessitent une validation
                   </p>
                 </div>
               </div>
             )}
             {stats.margeNegative > 0 && (
-              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-rose-600 mt-0.5" />
+              <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 flex items-start gap-3 dark:bg-rose-900/25 dark:border-rose-700/60">
+                <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-200 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-rose-900">Marges negatives</p>
-                  <p className="text-sm text-rose-800">
+                  <p className="font-semibold text-rose-900 dark:text-rose-100">Marges negatives</p>
+                  <p className="text-sm text-rose-800 dark:text-rose-200">
                     {stats.margeNegative} vente(s) avec marge negative
                   </p>
                 </div>
               </div>
             )}
             {stats.actionsRetard > 0 && (
-              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-                <Clock className="w-5 h-5 text-amber-600 mt-0.5" />
+              <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 flex items-start gap-3 dark:bg-amber-900/25 dark:border-amber-700/60">
+                <Clock className="w-5 h-5 text-amber-600 dark:text-amber-200 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-amber-900">Actions en retard</p>
-                  <p className="text-sm text-amber-800">
+                  <p className="font-semibold text-amber-900 dark:text-amber-100">Actions en retard</p>
+                  <p className="text-sm text-amber-800 dark:text-amber-200">
                     {stats.actionsRetard} action(s) depassees
                   </p>
                 </div>
               </div>
             )}
             {stats.pipeline90 > 0 && (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 flex items-start gap-3">
-                <DollarSign className="w-5 h-5 text-emerald-600 mt-0.5" />
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50/80 px-4 py-3 flex items-start gap-3 dark:bg-emerald-900/25 dark:border-emerald-700/60">
+                <DollarSign className="w-5 h-5 text-emerald-600 dark:text-emerald-200 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-emerald-900">Pipeline 90 jours</p>
-                  <p className="text-sm text-emerald-800">
+                  <p className="font-semibold text-emerald-900 dark:text-emerald-100">Pipeline 90 jours</p>
+                  <p className="text-sm text-emerald-800 dark:text-emerald-200">
                     {Math.round(stats.pipeline90).toLocaleString()} CA potentiel
                   </p>
                 </div>
               </div>
             )}
-            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-3">
-              <CheckCircle2 className="w-5 h-5 text-amber-600 mt-0.5" />
+            <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 flex items-start gap-3 dark:bg-amber-900/25 dark:border-amber-700/60">
+              <CheckCircle2 className="w-5 h-5 text-amber-600 dark:text-amber-200 mt-0.5" />
               <div>
-                <p className="font-semibold text-amber-900">Performance ventes</p>
-                <p className="text-sm text-amber-800">
+                <p className="font-semibold text-amber-900 dark:text-amber-100">Performance ventes</p>
+                <p className="text-sm text-amber-800 dark:text-amber-200">
                   {stats.ventesMonth} ventes facturées ce mois
                 </p>
               </div>
@@ -517,7 +521,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       </div>
 
       {filialePerformance.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6">
+        <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-lg font-semibold text-slate-900">Performance filiale</h2>
             {isAdmin && (
@@ -544,7 +548,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                       {row.code && <div className="text-xs text-slate-500">{row.code}</div>}
                     </td>
                     <td className="py-2 px-3 text-sm text-slate-700">{formatAmount(row.ca, row.devise)}</td>
-                    <td className={`py-2 px-3 text-sm ${row.marge < 0 ? "text-rose-600" : "text-emerald-600"}`}>
+                    <td className={`py-2 px-3 text-sm ${row.marge < 0 ? "text-rose-600 dark:text-rose-200" : "text-emerald-600 dark:text-emerald-200"}`}>
                       {formatAmount(row.marge, row.devise)}
                     </td>
                     <td className="py-2 px-3 text-sm text-slate-700">{formatAmount(row.pipeline90, row.devise)}</td>
@@ -562,9 +566,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6">
+      <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">
         <h2 className="text-lg font-semibold text-slate-900 mb-4 flex items-center gap-2">
-          <Shield className="w-5 h-5 text-amber-600" />
+          <Shield className="w-5 h-5 text-amber-600 dark:text-amber-200" />
           État opérationnel
         </h2>
         <div className="grid md:grid-cols-3 gap-6">

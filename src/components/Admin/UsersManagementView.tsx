@@ -27,7 +27,11 @@ const defaultForm = {
   actif: true,
 };
 
-export function UsersManagementView() {
+type UsersManagementViewProps = {
+  onNavigate?: (view: string) => void;
+};
+
+export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
   const { profile, signUp } = useAuth();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [filiales, setFiliales] = useState<Filiale[]>([]);
@@ -60,6 +64,8 @@ export function UsersManagementView() {
       return true;
     });
   }, [authEvents]);
+
+  const recentAuthEvents = useMemo(() => uniqueAuthEvents.slice(0, 10), [uniqueAuthEvents]);
 
   useEffect(() => {
     const load = async () => {
@@ -433,12 +439,22 @@ export function UsersManagementView() {
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-slate-900">Connexions récentes</h2>
-            <p className="text-sm text-slate-600">Historique des dernières connexions et déconnexions.</p>
+            <h2 className="text-lg font-semibold text-slate-900">Connexions recentes</h2>
+            <p className="text-sm text-slate-600">Historique des dernieres connexions et deconnexions.</p>
           </div>
-          <div className="flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-xs text-slate-700">
-            <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-            {uniqueAuthEvents.length} événements
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 rounded-full bg-slate-50 border border-slate-200 px-3 py-1 text-xs text-slate-700">
+              <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+              {recentAuthEvents.length} derniers
+            </div>
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate('auth-events')}
+                className="text-xs font-semibold text-amber-600 hover:text-amber-700"
+              >
+                Voir tous les logs
+              </button>
+            )}
           </div>
         </div>
 
@@ -449,45 +465,58 @@ export function UsersManagementView() {
         )}
 
         {!authEventsError && (
-          <div className="overflow-x-auto">
-            <table className="min-w-full">
-              <thead>
-                <tr className="border-b border-slate-200">
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Utilisateur</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Action</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date</th>
-                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Appareil</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {uniqueAuthEvents.map((event) => (
-                  <tr key={event.id} className="hover:bg-slate-50 transition">
-                    <td className="py-3 px-4 text-sm font-semibold text-slate-900">
-                      {getUserLabel(event.user_id)}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-slate-700">
-                      <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
-                        {formatEventLabel(event.event)}
-                      </span>
-                    </td>
-                    <td className="py-3 px-4 text-sm text-slate-700">
-                      {formatEventDate(event.created_at)}
-                    </td>
-                    <td className="py-3 px-4 text-sm text-slate-600">
-                      {event.user_agent ? event.user_agent.slice(0, 60) : 'N/A'}
-                    </td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="min-w-full">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Utilisateur</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Action</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date</th>
+                    <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Appareil</th>
                   </tr>
-                ))}
-                {uniqueAuthEvents.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="py-6 text-center text-sm text-slate-500">
-                      Aucun historique de connexion pour le moment.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {recentAuthEvents.map((event) => (
+                    <tr key={event.id} className="hover:bg-slate-50 transition">
+                      <td className="py-3 px-4 text-sm font-semibold text-slate-900">
+                        {getUserLabel(event.user_id)}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        <span className="px-2 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-semibold">
+                          {formatEventLabel(event.event)}
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-700">
+                        {formatEventDate(event.created_at)}
+                      </td>
+                      <td className="py-3 px-4 text-sm text-slate-600">
+                        {event.user_agent ? event.user_agent.slice(0, 60) : 'N/A'}
+                      </td>
+                    </tr>
+                  ))}
+                  {recentAuthEvents.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="py-6 text-center text-sm text-slate-500">
+                        Aucun historique de connexion pour le moment.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            {uniqueAuthEvents.length > recentAuthEvents.length && onNavigate && (
+              <div className="mt-3 text-sm text-slate-500">
+                Affichage limite aux 10 derniers evenements.
+                <button
+                  onClick={() => onNavigate('auth-events')}
+                  className="ml-2 font-semibold text-amber-600 hover:text-amber-700"
+                >
+                  Voir tout
+                </button>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
