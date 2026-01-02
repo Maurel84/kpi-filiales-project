@@ -30,6 +30,7 @@ const DATASETS: DatasetConfig[] = [
     dateField: 'created_at',
     supportsFiliale: true,
     supportsUser: true,
+    userField: 'created_by_id',
   },
   {
     id: 'commandes-fournisseurs',
@@ -225,7 +226,7 @@ export function DataExportsView() {
       const lines = [
         columns.join(','),
         ...rows.map((row) =>
-          columns.map((key) => `"${String(row[key] ?? '').replace(/\"/g, '""')}"`).join(',')
+          columns.map((key) => `"${String(row[key] ?? '').replace(/"/g, '""')}"`).join(',')
         ),
       ];
       const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });

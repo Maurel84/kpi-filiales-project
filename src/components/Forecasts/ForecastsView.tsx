@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Plus, Calendar, Filter, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFilialeContext } from '../../contexts/FilialeContext';
 import { supabase } from '../../lib/supabase';
 import type { Database } from '../../lib/database.types';
+import { ModalTabs } from '../ui/ModalTabs';
 
 type Marque = Database['public']['Tables']['marques']['Row'];
 type Modele = Database['public']['Tables']['modeles_produits']['Row'];
@@ -21,6 +23,7 @@ const monthLabels = ['Jan', 'Fev', 'Mar', 'Avr', 'Mai', 'Jui', 'Juil', 'Aou', 'S
 
 export function ForecastsView() {
   const { profile } = useAuth();
+  const { filialeId, isAdmin } = useFilialeContext();
   const [marques, setMarques] = useState<Marque[]>([]);
   const [modeles, setModeles] = useState<Modele[]>([]);
   const [categories, setCategories] = useState<Categorie[]>([]);
@@ -30,6 +33,7 @@ export function ForecastsView() {
   const [selectedType, setSelectedType] = useState<PrevisionTypeFilter>('all');
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'modele' | 'planning'>('modele');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -58,7 +62,7 @@ export function ForecastsView() {
     if (modelesData) setModeles(modelesData as Modele[]);
     if (categoriesData) setCategories(categoriesData as Categorie[]);
 
-    const filialeFilter = profile.role === 'admin_siege' ? {} : { filiale_id: profile.filiale_id };
+    const filialeFilter = filialeId ? { filiale_id: filialeId } : {};
 
     let query = supabase
       .from('previsions_ventes_modeles')
@@ -81,7 +85,7 @@ export function ForecastsView() {
       setRows(data as unknown as PrevisionRow[]);
     }
     setLoading(false);
-  }, [profile, selectedMarque, selectedType, selectedYear]);
+  }, [filialeId, profile, selectedMarque, selectedType, selectedYear]);
 
   useEffect(() => {
     loadData();
@@ -91,8 +95,23 @@ export function ForecastsView() {
     setFormData((prev) => ({ ...prev, annee: selectedYear }));
   }, [selectedYear]);
 
+  useEffect(() => {
+    if (isModalOpen) {
+      setActiveTab('modele');
+    }
+  }, [isModalOpen]);
+
   const submitForecast = async () => {
     if (!profile) return;
+    if (!filialeId) {
+      setSubmitError(
+        isAdmin
+          ? 'Selectionnez une filiale active pour saisir une prevision.'
+          : 'Associez une filiale pour saisir une prevision.'
+      );
+      return;
+    }
+
     if (!formData.marque_id || !formData.modele_id || !formData.quantite_prevue) {
       setSubmitError('Marque, modèle et quantité prévue sont obligatoires.');
       return;
@@ -114,7 +133,7 @@ export function ForecastsView() {
       mois: Number(formData.mois),
       quantite_prevue: Number(formData.quantite_prevue),
       type_prevision: formData.type_prevision,
-      filiale_id: profile.filiale_id || null,
+      filiale_id: filialeId || null,
       modifie_par_id: profile.id,
       date_modification: new Date().toISOString(),
     };
@@ -261,8 +280,8 @@ export function ForecastsView() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-xl p-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 relative">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute right-4 top-4 text-slate-500 hover:text-slate-800"
@@ -271,114 +290,129 @@ export function ForecastsView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Saisir une prévision modèle/mois</h2>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Marque</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.marque_id}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      marque_id: e.target.value,
-                      modele_id: '',
-                    })
-                  }
-                >
-                  <option value="">Sélectionner une marque</option>
-                  {marques.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.nom}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <ModalTabs
+              tabs={[
+                { id: 'modele', label: 'Modele' },
+                { id: 'planning', label: 'Planning' },
+              ]}
+              activeTab={activeTab}
+              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+            />
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Modèle</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.modele_id}
-                  onChange={(e) => setFormData({ ...formData, modele_id: e.target.value })}
-                >
-                  <option value="">Sélectionner un modèle</option>
-                  {modeles
-                    .filter((mod) => !formData.marque_id || mod.marque_id === formData.marque_id)
-                    .map((mod) => (
-                      <option key={mod.id} value={mod.id}>
-                        {mod.nom_complet} ({mod.code_modele})
+            {activeTab === 'modele' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Marque</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.marque_id}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        marque_id: e.target.value,
+                        modele_id: '',
+                      })
+                    }
+                  >
+                    <option value="">Selectionner une marque</option>
+                    {marques.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.nom}
                       </option>
                     ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Année</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.annee}
-                  onChange={(e) => setFormData({ ...formData, annee: Number(e.target.value) })}
-                  min={2023}
-                  max={2030}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Mois</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.mois}
-                  onChange={(e) => setFormData({ ...formData, mois: Number(e.target.value) })}
-                >
-                  {monthLabels.map((label, index) => (
-                    <option key={label} value={index + 1}>
-                      {label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Quantité prévue</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.quantite_prevue}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      quantite_prevue: Number(e.target.value),
-                    })
-                  }
-                  min={0}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Type de prévision</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.type_prevision}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      type_prevision: e.target.value as 'Budget' | 'Forecast' | 'Commandes',
-                    })
-                  }
-                >
-                  <option value="Forecast">Forecast</option>
-                  <option value="Budget">Budget</option>
-                  <option value="Commandes">Commandes</option>
-                </select>
-              </div>
-
-              {submitError && (
-                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-                  {submitError}
+                  </select>
                 </div>
-              )}
-            </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Modele</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.modele_id}
+                    onChange={(e) => setFormData({ ...formData, modele_id: e.target.value })}
+                  >
+                    <option value="">Selectionner un modele</option>
+                    {modeles
+                      .filter((mod) => !formData.marque_id || mod.marque_id === formData.marque_id)
+                      .map((mod) => (
+                        <option key={mod.id} value={mod.id}>
+                          {mod.nom_complet} ({mod.code_modele})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'planning' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Annee</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.annee}
+                    onChange={(e) => setFormData({ ...formData, annee: Number(e.target.value) })}
+                    min={2023}
+                    max={2030}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Mois</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.mois}
+                    onChange={(e) => setFormData({ ...formData, mois: Number(e.target.value) })}
+                  >
+                    {monthLabels.map((label, index) => (
+                      <option key={label} value={index + 1}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Quantite prevue</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.quantite_prevue}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        quantite_prevue: Number(e.target.value),
+                      })
+                    }
+                    min={0}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Type de prevision</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.type_prevision}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        type_prevision: e.target.value as 'Budget' | 'Forecast' | 'Commandes',
+                      })
+                    }
+                  >
+                    <option value="Forecast">Forecast</option>
+                    <option value="Budget">Budget</option>
+                    <option value="Commandes">Commandes</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {submitError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                {submitError}
+              </div>
+            )}
 
             <div className="mt-6 flex justify-end space-x-3">
               <button
@@ -402,3 +436,8 @@ export function ForecastsView() {
     </>
   );
 }
+
+
+
+
+

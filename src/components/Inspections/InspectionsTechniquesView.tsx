@@ -2,7 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { Plus, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFilialeContext } from '../../contexts/FilialeContext';
 import type { Database } from '../../lib/database.types';
+import { ModalTabs } from '../ui/ModalTabs';
 
 type Inspection = Database['public']['Tables']['inspections_techniques']['Row'];
 type Machine = Pick<Database['public']['Tables']['parc_machines']['Row'], 'id' | 'numero_serie' | 'marque' | 'modele' | 'client_nom'>;
@@ -11,11 +13,13 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export function InspectionsTechniquesView() {
   const { profile } = useAuth();
+  const { filialeId, isAdmin } = useFilialeContext();
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [machines, setMachines] = useState<Machine[]>([]);
   const [techniciens, setTechniciens] = useState<Technicien[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<'infos' | 'diagnostic' | 'devis'>('infos');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -36,15 +40,14 @@ export function InspectionsTechniquesView() {
   useEffect(() => {
     const load = async () => {
       if (!profile) return;
-      const isAdmin = profile.role === 'admin_siege';
-      const filialeId = profile.filiale_id;
+
       const query = supabase.from('inspections_techniques').select('*').order('date_inspection', { ascending: false });
-      if (!isAdmin) {
-        if (!filialeId) {
-          setInspections([]);
-          setLoading(false);
-          return;
-        }
+      if (!isAdmin && !filialeId) {
+        setInspections([]);
+        setLoading(false);
+        return;
+      }
+      if (filialeId) {
         const { data, error } = await query.eq('filiale_id', filialeId).limit(50);
         if (!error && data) setInspections(data as Inspection[]);
         setLoading(false);
@@ -55,19 +58,18 @@ export function InspectionsTechniquesView() {
       setLoading(false);
     };
     load();
-  }, [profile]);
+  }, [filialeId, isAdmin, profile]);
 
   useEffect(() => {
     const loadLookups = async () => {
       if (!profile) return;
-      const isAdmin = profile.role === 'admin_siege';
-      const filialeId = profile.filiale_id;
+
 
       let machineQuery = supabase
         .from('parc_machines')
         .select('id, numero_serie, marque, modele, client_nom')
         .order('numero_serie');
-      if (!isAdmin && filialeId) {
+      if (filialeId) {
         machineQuery = machineQuery.eq('filiale_vendeur_id', filialeId);
       }
       const techQueryBase = supabase
@@ -76,14 +78,14 @@ export function InspectionsTechniquesView() {
         .eq('role', 'technicien')
         .eq('actif', true)
         .order('nom');
-      const techQuery = !isAdmin && filialeId ? techQueryBase.eq('filiale_id', filialeId) : techQueryBase;
+      const techQuery = filialeId ? techQueryBase.eq('filiale_id', filialeId) : techQueryBase;
 
       const [{ data: machinesData }, { data: techsData }] = await Promise.all([machineQuery, techQuery]);
       if (machinesData) setMachines(machinesData as Machine[]);
       if (techsData) setTechniciens(techsData as Technicien[]);
     };
     loadLookups();
-  }, [profile]);
+  }, [filialeId, isAdmin, profile]);
 
   const getMachineLabel = (machine: Machine) => {
     const base = [machine.marque, machine.modele].filter(Boolean).join(' ');
@@ -106,7 +108,7 @@ export function InspectionsTechniquesView() {
 
   const submit = async () => {
     if (!profile) return;
-    if (!profile.filiale_id) {
+    if (!filialeId) {
       setSubmitError('Associez une filiale au profil pour créer une inspection.');
       return;
     }
@@ -119,7 +121,7 @@ export function InspectionsTechniquesView() {
     const payload = {
       numero: formData.numero,
       machine_id: formData.machine_id,
-      filiale_id: profile.filiale_id,
+      filiale_id: filialeId,
       technicien_id: formData.technicien_id || profile.id,
       date_inspection: formData.date_inspection || today(),
       type_inspection: formData.type_inspection as Inspection['type_inspection'],
@@ -145,9 +147,9 @@ export function InspectionsTechniquesView() {
     setIsModalOpen(false);
     setFormData({ ...formData, numero: '', machine_id: '', anomalies_detectees: '', pieces_recommandees: '', commentaires: '' });
     const query = supabase.from('inspections_techniques').select('*').order('date_inspection', { ascending: false });
-    const { data } = profile.role === 'admin_siege'
-      ? await query.limit(50)
-      : await query.eq('filiale_id', profile.filiale_id).limit(50);
+    const { data } = filialeId
+      ? await query.eq('filiale_id', filialeId).limit(50)
+      : await query.limit(50);
     if (data) setInspections(data as Inspection[]);
   };
 
@@ -167,7 +169,11 @@ export function InspectionsTechniquesView() {
           <p className="text-slate-600">Suivi des diagnostics et devis générés</p>
         </div>
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setSubmitError('');
+            setIsModalOpen(true);
+            setModalTab('infos');
+          }}
           className="flex items-center space-x-2 bg-gradient-to-r from-amber-500 to-orange-600 text-white px-5 py-2.5 rounded-lg shadow hover:from-amber-600 hover:to-orange-700"
         >
           <Plus className="w-5 h-5" />
@@ -222,8 +228,8 @@ export function InspectionsTechniquesView() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 relative">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute right-4 top-4 text-slate-500 hover:text-slate-800"
@@ -232,135 +238,155 @@ export function InspectionsTechniquesView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Nouvelle inspection</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Numéro</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.numero}
-                  onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
-                />
+            <ModalTabs
+              tabs={[
+                { id: 'infos', label: 'Infos' },
+                { id: 'diagnostic', label: 'Diagnostic' },
+                { id: 'devis', label: 'Devis' },
+              ]}
+              activeTab={modalTab}
+              onChange={(key) => setModalTab(key as typeof modalTab)}
+            />
+            {modalTab === 'infos' && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Numero</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.numero}
+                    onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Machine</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.machine_id}
+                    onChange={(e) => setFormData({ ...formData, machine_id: e.target.value })}
+                  >
+                    <option value="">Selectionner une machine</option>
+                    {machines.map((machine) => (
+                      <option key={machine.id} value={machine.id}>
+                        {getMachineLabel(machine)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Technicien</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.technicien_id}
+                    onChange={(e) => setFormData({ ...formData, technicien_id: e.target.value })}
+                  >
+                    <option value="">Moi (profil connecte)</option>
+                    {techniciens.map((tech) => (
+                      <option key={tech.id} value={tech.id}>
+                        {getTechnicienLabel(tech)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Date d'inspection</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.date_inspection}
+                    onChange={(e) => setFormData({ ...formData, date_inspection: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Type</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.type_inspection}
+                    onChange={(e) => setFormData({ ...formData, type_inspection: e.target.value })}
+                  >
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Reparation">Reparation</option>
+                    <option value="Diagnostic">Diagnostic</option>
+                    <option value="Garantie">Garantie</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Heures compteur</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.heures_compteur}
+                    onChange={(e) => setFormData({ ...formData, heures_compteur: e.target.value })}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Machine</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.machine_id}
-                  onChange={(e) => setFormData({ ...formData, machine_id: e.target.value })}
-                >
-                  <option value="">Sélectionner une machine</option>
-                  {machines.map((machine) => (
-                    <option key={machine.id} value={machine.id}>
-                      {getMachineLabel(machine)}
-                    </option>
-                  ))}
-                </select>
+            )}
+            {modalTab === 'diagnostic' && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Anomalies detectees (separees par ,)</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.anomalies_detectees}
+                    onChange={(e) => setFormData({ ...formData, anomalies_detectees: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Pieces recommandees (separees par ,)</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.pieces_recommandees}
+                    onChange={(e) => setFormData({ ...formData, pieces_recommandees: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium text-slate-700">Commentaires</label>
+                  <textarea
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.commentaires}
+                    onChange={(e) => setFormData({ ...formData, commentaires: e.target.value })}
+                    rows={4}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Technicien</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.technicien_id}
-                  onChange={(e) => setFormData({ ...formData, technicien_id: e.target.value })}
-                >
-                  <option value="">Moi (profil connecté)</option>
-                  {techniciens.map((tech) => (
-                    <option key={tech.id} value={tech.id}>
-                      {getTechnicienLabel(tech)}
-                    </option>
-                  ))}
-                </select>
+            )}
+            {modalTab === 'devis' && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Devis genere ?</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.devis_genere ? 'oui' : 'non'}
+                    onChange={(e) => setFormData({ ...formData, devis_genere: e.target.value === 'oui' })}
+                  >
+                    <option value="non">Non</option>
+                    <option value="oui">Oui</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Montant devis</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.montant_devis}
+                    onChange={(e) => setFormData({ ...formData, montant_devis: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Statut devis</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.statut_devis}
+                    onChange={(e) => setFormData({ ...formData, statut_devis: e.target.value })}
+                  >
+                    <option value="A_etablir">A etablir</option>
+                    <option value="Envoye">Envoye</option>
+                    <option value="Accepte">Accepte</option>
+                    <option value="Refuse">Refuse</option>
+                    <option value="Null">Null</option>
+                  </select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Date d'inspection</label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.date_inspection}
-                  onChange={(e) => setFormData({ ...formData, date_inspection: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Type</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.type_inspection}
-                  onChange={(e) => setFormData({ ...formData, type_inspection: e.target.value })}
-                >
-                  <option value="Maintenance">Maintenance</option>
-                  <option value="Reparation">Réparation</option>
-                  <option value="Diagnostic">Diagnostic</option>
-                  <option value="Garantie">Garantie</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Heures compteur</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.heures_compteur}
-                  onChange={(e) => setFormData({ ...formData, heures_compteur: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Anomalies détectées (séparées par ,)</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.anomalies_detectees}
-                  onChange={(e) => setFormData({ ...formData, anomalies_detectees: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Pièces recommandées (séparées par ,)</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.pieces_recommandees}
-                  onChange={(e) => setFormData({ ...formData, pieces_recommandees: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Devis généré ?</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.devis_genere ? 'oui' : 'non'}
-                  onChange={(e) => setFormData({ ...formData, devis_genere: e.target.value === 'oui' })}
-                >
-                  <option value="non">Non</option>
-                  <option value="oui">Oui</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Montant devis</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.montant_devis}
-                  onChange={(e) => setFormData({ ...formData, montant_devis: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Statut devis</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.statut_devis}
-                  onChange={(e) => setFormData({ ...formData, statut_devis: e.target.value })}
-                >
-                  <option value="A_etablir">À établir</option>
-                  <option value="Envoye">Envoyé</option>
-                  <option value="Accepte">Accepté</option>
-                  <option value="Refuse">Refusé</option>
-                  <option value="Null">Null</option>
-                </select>
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium text-slate-700">Commentaires</label>
-                <textarea
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.commentaires}
-                  onChange={(e) => setFormData({ ...formData, commentaires: e.target.value })}
-                />
-              </div>
-            </div>
+            )}
 
             {submitError && (
               <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -390,3 +416,8 @@ export function InspectionsTechniquesView() {
     </>
   );
 }
+
+
+
+
+

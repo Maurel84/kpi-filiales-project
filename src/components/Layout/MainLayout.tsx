@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type ReactNode } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { FilialeContext } from '../../contexts/FilialeContext';
 import { supabase } from '../../lib/supabase';
 import {
   LayoutDashboard,
@@ -42,9 +43,17 @@ interface MainLayoutProps {
   onViewChange: (view: string) => void;
   theme?: 'light' | 'dark';
   onToggleTheme?: () => void;
+  modulePermissions?: Record<string, boolean> | null;
 }
 
-export function MainLayout({ children, currentView, onViewChange, theme = 'light', onToggleTheme }: MainLayoutProps) {
+export function MainLayout({
+  children,
+  currentView,
+  onViewChange,
+  theme = 'light',
+  onToggleTheme,
+  modulePermissions,
+}: MainLayoutProps) {
   const { profile, user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -53,6 +62,8 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadError, setUploadError] = useState('');
   const [filialeLabel, setFilialeLabel] = useState<string | null>(null);
+  const [filiales, setFiliales] = useState<Array<{ id: string; nom: string | null; code: string | null }>>([]);
+  const [activeFilialeId, setActiveFilialeId] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notifyInApp, setNotifyInApp] = useState(() => {
     if (typeof window === 'undefined') return true;
@@ -97,7 +108,22 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
       return profile && item.roles.includes(profile.role);
     });
   }, [menuItems, profile]);
-  const allowedViewIds = useMemo(() => new Set(filteredMenuItems.map((item) => item.id)), [filteredMenuItems]);
+  const filteredModuleItems = useMemo(() => {
+    if (!modulePermissions || profile?.role === 'admin_siege') return filteredMenuItems;
+    return filteredMenuItems.filter((item) => modulePermissions[item.id] !== false);
+  }, [filteredMenuItems, modulePermissions, profile?.role]);
+  const allowedViewIds = useMemo(() => new Set(filteredModuleItems.map((item) => item.id)), [filteredModuleItems]);
+  const isAdmin = profile?.role === 'admin_siege';
+  const effectiveFilialeId = isAdmin ? activeFilialeId : profile?.filiale_id || null;
+  const filialeContextValue = useMemo(
+    () => ({
+      filialeId: effectiveFilialeId,
+      setFilialeId: setActiveFilialeId,
+      isAdmin: Boolean(isAdmin),
+      filiales,
+    }),
+    [effectiveFilialeId, filiales, isAdmin]
+  );
 
   const getRoleBadge = (role: string) => {
     const badges = {
@@ -111,7 +137,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
   };
 
   const roleBadge = profile ? getRoleBadge(profile.role) : null;
-  const activeMenu = filteredMenuItems.find((item) => item.id === currentView);
+  const activeMenu = filteredModuleItems.find((item) => item.id === currentView);
   const displayName = useMemo(() => {
     const fromProfile = [profile?.prenom, profile?.nom].filter(Boolean).join(' ').trim();
     if (fromProfile) return fromProfile;
@@ -147,13 +173,59 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
   }, [user?.user_metadata?.avatar_url]);
 
   useEffect(() => {
-    const filialeId = profile?.filiale_id;
+    if (!profile) return;
+    if (!isAdmin) {
+      setActiveFilialeId(profile.filiale_id || null);
+      return;
+    }
+    let isMounted = true;
+    const loadFiliales = async () => {
+      const { data, error } = await supabase
+        .from('filiales')
+        .select('id, nom, code')
+        .order('nom');
+      if (!isMounted) return;
+      if (!error && data) {
+        setFiliales(data as Array<{ id: string; nom: string | null; code: string | null }>);
+        if (typeof window !== 'undefined') {
+          const saved = window.localStorage.getItem('active_filiale_id');
+          if (saved && data.some((f) => f.id === saved)) {
+            setActiveFilialeId(saved);
+          } else if (data.length === 1) {
+            setActiveFilialeId(data[0].id);
+          }
+        }
+      }
+    };
+    loadFiliales();
+    return () => {
+      isMounted = false;
+    };
+  }, [isAdmin, profile, profile?.filiale_id]);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    if (typeof window === 'undefined') return;
+    if (activeFilialeId) {
+      window.localStorage.setItem('active_filiale_id', activeFilialeId);
+    } else {
+      window.localStorage.removeItem('active_filiale_id');
+    }
+  }, [activeFilialeId, isAdmin]);
+
+  useEffect(() => {
+    const filialeId = effectiveFilialeId;
     if (!filialeId) {
-      setFilialeLabel(null);
+      setFilialeLabel(isAdmin ? 'Toutes les filiales' : null);
       return;
     }
     let isMounted = true;
     const loadFiliale = async () => {
+      const match = filiales.find((filiale) => filiale.id === filialeId);
+      if (match) {
+        setFilialeLabel(match.nom || match.code || filialeId);
+        return;
+      }
       const { data, error } = await supabase
         .from('filiales')
         .select('nom, code')
@@ -170,7 +242,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
     return () => {
       isMounted = false;
     };
-  }, [profile?.filiale_id]);
+  }, [effectiveFilialeId, filiales, isAdmin]);
 
   useEffect(() => {
     if (!profile) return;
@@ -178,21 +250,10 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
 
     const loadNotifications = async () => {
       const canSee = (viewId: string) => allowedViewIds.has(viewId);
-      const filialeFilter =
-        profile.role === 'admin_siege' ? {} : profile.filiale_id ? { filiale_id: profile.filiale_id } : {};
+      const filialeFilter = effectiveFilialeId ? { filiale_id: effectiveFilialeId } : {};
+      const filialeVendeurFilter = effectiveFilialeId ? { filiale_vendeur_id: effectiveFilialeId } : {};
       const now = new Date();
-      const todayIso = now.toISOString().slice(0, 10);
-      const startMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().slice(0, 10);
-      const endMonth = new Date(now.getFullYear(), now.getMonth() + 1, 1).toISOString().slice(0, 10);
-      const endWindow = new Date(now);
-      endWindow.setDate(endWindow.getDate() + 30);
-      const endWindowIso = endWindow.toISOString().slice(0, 10);
-      const weekEnd = new Date(now);
-      weekEnd.setDate(weekEnd.getDate() + 7);
-      const weekEndIso = weekEnd.toISOString().slice(0, 10);
-      const obsoleteDate = new Date(now);
-      obsoleteDate.setMonth(obsoleteDate.getMonth() - 12);
-      const obsoleteIso = obsoleteDate.toISOString().slice(0, 10);
+      const currentYear = now.getFullYear();
 
       const kpisPromise = canSee('kpis')
         ? supabase
@@ -201,65 +262,239 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
             .in('status', ['Draft', 'Submitted'])
             .match(filialeFilter)
         : Promise.resolve({ count: 0, error: null });
-      const actionsPromise = canSee('plan-actions')
+      const actionsLatePromise = canSee('plan-actions')
         ? supabase
             .from('plan_actions')
             .select('id', { count: 'exact', head: true })
             .match(filialeFilter)
-            .not('statut', 'in', '("Termine","Annule")')
-            .or(`statut.eq.Retard,date_fin_prevue.lt.${todayIso}`)
+            .eq('statut', 'Retard')
         : Promise.resolve({ count: 0, error: null });
-      const stockPromise = canSee('stocks')
+      const actionsOpenPromise = canSee('plan-actions')
+        ? supabase
+            .from('plan_actions')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .eq('statut', 'En_cours')
+        : Promise.resolve({ count: 0, error: null });
+      const stockObsoletePromise = canSee('stocks')
         ? supabase
             .from('stock_items')
             .select('id', { count: 'exact', head: true })
             .match(filialeFilter)
-            .lt('date_entree', obsoleteIso)
+            .eq('statut', 'Obsolete')
         : Promise.resolve({ count: 0, error: null });
-      const ventesPromise = canSee('ventes')
+      const stockReservePromise = canSee('stocks')
+        ? supabase
+            .from('stock_items')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .in('statut', ['Reserve', 'Transfert'])
+        : Promise.resolve({ count: 0, error: null });
+      const stockIncompletePromise = canSee('stocks')
+        ? supabase
+            .from('stock_items')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .or('gamme.is.null,pays.is.null')
+        : Promise.resolve({ count: 0, error: null });
+      const ventesMissingPromise = canSee('ventes')
         ? supabase
             .from('ventes')
             .select('id', { count: 'exact', head: true })
             .match(filialeFilter)
-            .gte('date_vente', startMonth)
-            .lt('date_vente', endMonth)
+            .or('vendeur.is.null,marque.is.null')
         : Promise.resolve({ count: 0, error: null });
-      const opportunitesPromise = canSee('visites-clients')
+      const commandesClientsMissingPromise = canSee('commandes-clients')
         ? supabase
-            .from('opportunites')
+            .from('commandes_clients')
             .select('id', { count: 'exact', head: true })
             .match(filialeFilter)
-            .gte('date_closing_prevue', todayIso)
-            .lt('date_closing_prevue', endWindowIso)
-            .not('statut', 'in', '("Gagne","Gagnee","Perdu","Perdue","Abandonne","Abandonnee")')
+            .is('prevision_facturation', null)
         : Promise.resolve({ count: 0, error: null });
-      const visitesPromise = canSee('visites-clients')
+      const commandesFournisseursEtaMissingPromise = canSee('commandes')
+        ? supabase
+            .from('commandes_fournisseurs')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .is('eta', null)
+        : Promise.resolve({ count: 0, error: null });
+      const commandesFournisseursPrixMissingPromise = canSee('commandes')
+        ? supabase
+            .from('commandes_fournisseurs')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .is('prix_achat_ht', null)
+        : Promise.resolve({ count: 0, error: null });
+      const ventesPerduesMissingPromise = canSee('ventes-perdues')
+        ? supabase
+            .from('ventes_perdues')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .or('marque_concurrent.is.null,modele_concurrent.is.null,prix_concurrent.is.null')
+        : Promise.resolve({ count: 0, error: null });
+      const visitesIncompletePromise = canSee('visites-clients')
         ? supabase
             .from('visites_clients')
             .select('id', { count: 'exact', head: true })
             .match(filialeFilter)
-            .gte('date_visite', todayIso)
-            .lte('date_visite', weekEndIso)
+            .or('email_client.is.null,telephone_client.is.null')
+        : Promise.resolve({ count: 0, error: null });
+      const opportunitesOpenPromise = canSee('visites-clients')
+        ? supabase
+            .from('opportunites')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .in('statut', ['En_cours', 'Reporte'])
+        : Promise.resolve({ count: 0, error: null });
+      const opportunitesMissingDatePromise = canSee('visites-clients')
+        ? supabase
+            .from('opportunites')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .is('date_closing_prevue', null)
+        : Promise.resolve({ count: 0, error: null });
+      const parcMachinesDownPromise = canSee('parc-machines')
+        ? supabase
+            .from('parc_machines')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeVendeurFilter)
+            .in('statut', ['Inactif', 'Hors_service'])
+        : Promise.resolve({ count: 0, error: null });
+      const parcMachinesInspectionMissingPromise = canSee('parc-machines')
+        ? supabase
+            .from('parc_machines')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeVendeurFilter)
+            .is('date_derniere_inspection', null)
+        : Promise.resolve({ count: 0, error: null });
+      const inspectionsPendingPromise = canSee('inspections')
+        ? supabase
+            .from('inspections_techniques')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .eq('statut_devis', 'A_etablir')
+        : Promise.resolve({ count: 0, error: null });
+      const sessionsPendingPromise = canSee('sessions-inter')
+        ? (effectiveFilialeId
+            ? supabase
+                .from('sessions_interfiliales')
+                .select('id', { count: 'exact', head: true })
+                .or(`filiale_origine_id.eq.${effectiveFilialeId},filiale_destination_id.eq.${effectiveFilialeId}`)
+                .eq('statut', 'En_attente')
+            : supabase
+                .from('sessions_interfiliales')
+                .select('id', { count: 'exact', head: true })
+                .eq('statut', 'En_attente'))
+        : Promise.resolve({ count: 0, error: null });
+      const budgetsMissingPromise = canSee('budgets')
+        ? supabase
+            .from('budgets')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .eq('annee', currentYear)
+        : Promise.resolve({ count: 0, error: null });
+      const forecastsMissingPromise = canSee('forecasts')
+        ? supabase
+            .from('previsions_ventes_modeles')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .or('quantite_prevue.is.null,quantite_prevue.lte.0')
+        : Promise.resolve({ count: 0, error: null });
+      const pdmMissingPromise = canSee('pdm')
+        ? supabase
+            .from('pdm_entries')
+            .select('id', { count: 'exact', head: true })
+            .match(filialeFilter)
+            .is('source_industrie_type', null)
+        : Promise.resolve({ count: 0, error: null });
+      const powerBiMissingPromise = canSee('power-bi')
+        ? supabase
+            .from('powerbi_configs')
+            .select('id', { count: 'exact', head: true })
+            .is('embed_url', null)
         : Promise.resolve({ count: 0, error: null });
 
-      const [kpisRes, actionsRes, stockRes, ventesRes, opportunitesRes, visitesRes] = await Promise.all([
+      const [
+        kpisRes,
+        actionsLateRes,
+        actionsOpenRes,
+        stockObsoleteRes,
+        stockReserveRes,
+        stockIncompleteRes,
+        ventesMissingRes,
+        commandesClientsMissingRes,
+        commandesFournisseursEtaMissingRes,
+        commandesFournisseursPrixMissingRes,
+        ventesPerduesMissingRes,
+        visitesIncompleteRes,
+        opportunitesOpenRes,
+        opportunitesMissingDateRes,
+        parcMachinesDownRes,
+        parcMachinesInspectionMissingRes,
+        inspectionsPendingRes,
+        sessionsPendingRes,
+        budgetsMissingRes,
+        forecastsMissingRes,
+        pdmMissingRes,
+        powerBiMissingRes,
+      ] = await Promise.all([
         kpisPromise,
-        actionsPromise,
-        stockPromise,
-        ventesPromise,
-        opportunitesPromise,
-        visitesPromise,
+        actionsLatePromise,
+        actionsOpenPromise,
+        stockObsoletePromise,
+        stockReservePromise,
+        stockIncompletePromise,
+        ventesMissingPromise,
+        commandesClientsMissingPromise,
+        commandesFournisseursEtaMissingPromise,
+        commandesFournisseursPrixMissingPromise,
+        ventesPerduesMissingPromise,
+        visitesIncompletePromise,
+        opportunitesOpenPromise,
+        opportunitesMissingDatePromise,
+        parcMachinesDownPromise,
+        parcMachinesInspectionMissingPromise,
+        inspectionsPendingPromise,
+        sessionsPendingPromise,
+        budgetsMissingPromise,
+        forecastsMissingPromise,
+        pdmMissingPromise,
+        powerBiMissingPromise,
       ]);
 
       if (!isMounted) return;
 
+      const resolveCount = (res: { count: number | null; error: unknown } | null) => {
+        if (!res || res.error || typeof res.count !== 'number') return 0;
+        return res.count || 0;
+      };
+
       const notificationsList: NotificationItem[] = [];
-      const kpisPending = kpisRes.count || 0;
-      const actionsLate = actionsRes.count || 0;
-      const stockRisk = stockRes.count || 0;
-      const ventesMonth = ventesRes.count || 0;
-      const opportunitesSoon = opportunitesRes.count || 0;
-      const visitesWeek = visitesRes.count || 0;
+      const kpisPending = resolveCount(kpisRes);
+      const actionsLate = resolveCount(actionsLateRes);
+      const actionsOpen = resolveCount(actionsOpenRes);
+      const stockObsolete = resolveCount(stockObsoleteRes);
+      const stockReserve = resolveCount(stockReserveRes);
+      const stockIncomplete = resolveCount(stockIncompleteRes);
+      const ventesMissing = resolveCount(ventesMissingRes);
+      const commandesClientsMissing = resolveCount(commandesClientsMissingRes);
+      const commandesFournisseursEtaMissing = resolveCount(commandesFournisseursEtaMissingRes);
+      const commandesFournisseursPrixMissing = resolveCount(commandesFournisseursPrixMissingRes);
+      const ventesPerduesMissing = resolveCount(ventesPerduesMissingRes);
+      const visitesIncomplete = resolveCount(visitesIncompleteRes);
+      const opportunitesOpen = resolveCount(opportunitesOpenRes);
+      const opportunitesMissingDate = resolveCount(opportunitesMissingDateRes);
+      const parcMachinesDown = resolveCount(parcMachinesDownRes);
+      const parcMachinesInspectionMissing = resolveCount(parcMachinesInspectionMissingRes);
+      const inspectionsPending = resolveCount(inspectionsPendingRes);
+      const sessionsPending = resolveCount(sessionsPendingRes);
+      const budgetsCount =
+        budgetsMissingRes && !budgetsMissingRes.error && typeof budgetsMissingRes.count === 'number'
+          ? budgetsMissingRes.count
+          : null;
+      const forecastsMissing = resolveCount(forecastsMissingRes);
+      const pdmMissing = resolveCount(pdmMissingRes);
+      const powerBiMissing = resolveCount(powerBiMissingRes);
 
       if (kpisPending > 0) {
         notificationsList.push({
@@ -275,9 +510,9 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
 
       if (actionsLate > 0) {
         notificationsList.push({
-          id: `actions-${actionsLate}`,
+          id: `actions-retard-${actionsLate}`,
           title: 'Actions en retard',
-          message: `${actionsLate} action(s) depassees.`,
+          message: `${actionsLate} action(s) en retard.`,
           createdAt: new Date().toISOString(),
           read: false,
           tone: 'warning',
@@ -285,11 +520,23 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
         });
       }
 
-      if (stockRisk > 0) {
+      if (actionsOpen > 0) {
         notificationsList.push({
-          id: `stock-${stockRisk}`,
-          title: 'Stock a risque',
-          message: `${stockRisk} article(s) en stock > 12 mois.`,
+          id: `actions-ouvertes-${actionsOpen}`,
+          title: 'Actions en cours',
+          message: `${actionsOpen} action(s) ouvertes.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'info',
+          view: 'plan-actions',
+        });
+      }
+
+      if (stockObsolete > 0) {
+        notificationsList.push({
+          id: `stock-obsolete-${stockObsolete}`,
+          title: 'Stock obsolete',
+          message: `${stockObsolete} article(s) en obsolete.`,
           createdAt: new Date().toISOString(),
           read: false,
           tone: 'warning',
@@ -297,39 +544,219 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
         });
       }
 
-      if (opportunitesSoon > 0) {
+      if (stockReserve > 0) {
         notificationsList.push({
-          id: `opportunites-${opportunitesSoon}`,
-          title: 'Opportunites a cloturer',
-          message: `${opportunitesSoon} opportunite(s) a cloturer sous 30 jours.`,
+          id: `stock-reserve-${stockReserve}`,
+          title: 'Stock reserve/transfert',
+          message: `${stockReserve} article(s) reserves ou en transfert.`,
           createdAt: new Date().toISOString(),
           read: false,
           tone: 'info',
-          view: 'visites-clients',
+          view: 'stocks',
         });
       }
 
-      if (visitesWeek > 0) {
+      if (stockIncomplete > 0) {
         notificationsList.push({
-          id: `visites-${visitesWeek}`,
-          title: 'Visites cette semaine',
-          message: `${visitesWeek} visite(s) planifiees sur 7 jours.`,
+          id: `stock-incomplete-${stockIncomplete}`,
+          title: 'Stock incomplet',
+          message: `${stockIncomplete} article(s) sans gamme ou pays.`,
           createdAt: new Date().toISOString(),
           read: false,
           tone: 'info',
-          view: 'visites-clients',
+          view: 'stocks',
         });
       }
 
-      if (ventesMonth > 0) {
+      if (commandesFournisseursEtaMissing > 0) {
         notificationsList.push({
-          id: `ventes-${ventesMonth}`,
-          title: 'Ventes du mois',
-          message: `${ventesMonth} vente(s) enregistrees ce mois.`,
+          id: `cmd-fournisseurs-eta-${commandesFournisseursEtaMissing}`,
+          title: 'Commandes fournisseurs sans ETA',
+          message: `${commandesFournisseursEtaMissing} commande(s) sans ETA.`,
           createdAt: new Date().toISOString(),
           read: false,
-          tone: 'success',
+          tone: 'warning',
+          view: 'commandes',
+        });
+      }
+
+      if (commandesFournisseursPrixMissing > 0) {
+        notificationsList.push({
+          id: `cmd-fournisseurs-prix-${commandesFournisseursPrixMissing}`,
+          title: 'Commandes fournisseurs sans prix',
+          message: `${commandesFournisseursPrixMissing} commande(s) sans prix achat.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'info',
+          view: 'commandes',
+        });
+      }
+
+      if (commandesClientsMissing > 0) {
+        notificationsList.push({
+          id: `cmd-clients-${commandesClientsMissing}`,
+          title: 'Commandes clients incompletes',
+          message: `${commandesClientsMissing} commande(s) sans date de facturation.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'commandes-clients',
+        });
+      }
+
+      if (ventesMissing > 0) {
+        notificationsList.push({
+          id: `ventes-missing-${ventesMissing}`,
+          title: 'Ventes a completer',
+          message: `${ventesMissing} vente(s) sans vendeur ou marque.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
           view: 'ventes',
+        });
+      }
+
+      if (ventesPerduesMissing > 0) {
+        notificationsList.push({
+          id: `ventes-perdues-${ventesPerduesMissing}`,
+          title: 'Ventes perdues incompletes',
+          message: `${ventesPerduesMissing} vente(s) perdues sans details concurrence.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'ventes-perdues',
+        });
+      }
+
+      if (visitesIncomplete > 0) {
+        notificationsList.push({
+          id: `visites-incomplete-${visitesIncomplete}`,
+          title: 'Visites a enrichir',
+          message: `${visitesIncomplete} visite(s) sans contact complet.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'info',
+          view: 'visites-clients',
+        });
+      }
+
+      if (opportunitesOpen > 0) {
+        notificationsList.push({
+          id: `opportunites-${opportunitesOpen}`,
+          title: 'Opportunites ouvertes',
+          message: `${opportunitesOpen} opportunite(s) ouvertes a suivre.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'info',
+          view: 'visites-clients',
+        });
+      }
+
+      if (opportunitesMissingDate > 0) {
+        notificationsList.push({
+          id: `opportunites-dates-${opportunitesMissingDate}`,
+          title: 'Opportunites sans date',
+          message: `${opportunitesMissingDate} opportunite(s) sans date de closing.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'visites-clients',
+        });
+      }
+
+      if (parcMachinesDown > 0) {
+        notificationsList.push({
+          id: `parc-machines-${parcMachinesDown}`,
+          title: 'Parc machines a risque',
+          message: `${parcMachinesDown} machine(s) inactives ou hors service.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'parc-machines',
+        });
+      }
+
+      if (parcMachinesInspectionMissing > 0) {
+        notificationsList.push({
+          id: `parc-machines-inspections-${parcMachinesInspectionMissing}`,
+          title: 'Parc machines sans inspection',
+          message: `${parcMachinesInspectionMissing} machine(s) sans derniere inspection.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'info',
+          view: 'parc-machines',
+        });
+      }
+
+      if (inspectionsPending > 0) {
+        notificationsList.push({
+          id: `inspections-${inspectionsPending}`,
+          title: 'Devis SAV en attente',
+          message: `${inspectionsPending} inspection(s) avec devis a etablir.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'inspections',
+        });
+      }
+
+      if (sessionsPending > 0) {
+        notificationsList.push({
+          id: `sessions-${sessionsPending}`,
+          title: 'Sessions interfiliales a traiter',
+          message: `${sessionsPending} session(s) en attente de validation.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'info',
+          view: 'sessions-inter',
+        });
+      }
+
+      if (budgetsCount === 0 && canSee('budgets')) {
+        notificationsList.push({
+          id: 'budgets-empty',
+          title: 'Budget manquant',
+          message: `Aucun budget ${currentYear} enregistre.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'budgets',
+        });
+      }
+
+      if (forecastsMissing > 0) {
+        notificationsList.push({
+          id: `forecasts-${forecastsMissing}`,
+          title: 'Previsions a completer',
+          message: `${forecastsMissing} prevision(s) avec quantite a zero.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'info',
+          view: 'forecasts',
+        });
+      }
+
+      if (pdmMissing > 0) {
+        notificationsList.push({
+          id: `pdm-${pdmMissing}`,
+          title: 'PDM a documenter',
+          message: `${pdmMissing} entree(s) sans source renseignee.`,
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'info',
+          view: 'pdm',
+        });
+      }
+
+      if (powerBiMissing > 0) {
+        notificationsList.push({
+          id: `powerbi-${powerBiMissing}`,
+          title: 'Power BI non configure',
+          message: 'Ajoutez un embed Power BI pour activer le reporting.',
+          createdAt: new Date().toISOString(),
+          read: false,
+          tone: 'warning',
+          view: 'power-bi',
         });
       }
 
@@ -350,7 +777,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
         window.clearInterval(interval);
       }
     };
-  }, [profile?.filiale_id, profile?.role, allowedViewIds]);
+  }, [effectiveFilialeId, allowedViewIds]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -469,21 +896,22 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
   };
 
   return (
-    <div className="relative min-h-screen bg-slate-50 text-slate-900 surface-grid">
+    <FilialeContext.Provider value={filialeContextValue}>
+      <div className="relative app-shell surface-grid">
 
       <div className="relative flex min-h-screen">
         <aside
           className={`${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          } fixed lg:static lg:translate-x-0 inset-y-0 left-0 z-50 w-72 bg-white text-slate-900 transition-transform duration-300 ease-in-out shadow-2xl border-r border-slate-200`}
+          } fixed lg:static lg:translate-x-0 inset-y-0 left-0 z-50 w-72 app-sidebar transition-transform duration-300 ease-in-out shadow-2xl border-r border-white/10`}
         >
           <div className="h-full flex flex-col">
-            <div className="p-6 border-b border-slate-200">
+            <div className="p-6 border-b border-white/10">
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-3">
                   <img src={logoUrl} alt="Tractafric Equipment" className="h-9 w-auto" />
                   <div>
-                    <p className="text-xs uppercase tracking-[0.2em] text-amber-600/80">Pilotage</p>
+                    <p className="text-xs uppercase tracking-[0.2em] text-amber-300/80">Pilotage</p>
                     <h1 className="text-2xl font-semibold text-gradient">Multi-Filiales</h1>
                   </div>
                 </div>
@@ -496,15 +924,15 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
                 </button>
               </div>
               {profile && (
-                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-slate-700 font-semibold">
+                      <p className="text-sm text-slate-100 font-semibold">
                         {profile.prenom} {profile.nom}
                       </p>
-                      <p className="text-xs text-slate-500">{profile.email}</p>
+                      <p className="text-xs text-slate-300">{profile.email}</p>
                     </div>
-                    <div className="h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_0_6px_rgba(245,158,11,0.18)]" />
+                    <div className="h-2.5 w-2.5 rounded-full bg-amber-400 shadow-[0_0_0_6px_rgba(245,179,1,0.18)]" />
                   </div>
                   {roleBadge && (
                     <span className={`mt-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold ${roleBadge.color} bg-opacity-80`}>
@@ -516,7 +944,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
             </div>
 
             <nav className="flex-1 overflow-y-auto p-4 space-y-1">
-              {filteredMenuItems.map((item) => {
+              {filteredModuleItems.map((item) => {
                 const Icon = item.icon;
                 const isActive = currentView === item.id;
                 return (
@@ -528,20 +956,20 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
                     }}
                     className={`group relative w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all text-left ${
                       isActive
-                        ? 'bg-amber-50 text-amber-900 shadow border border-amber-200'
-                        : 'text-slate-700 hover:bg-slate-50 hover:text-slate-900 border border-transparent'
+                        ? 'bg-amber-400/15 text-amber-100 shadow border border-amber-300/30'
+                        : 'text-slate-200/80 hover:bg-white/5 hover:text-white border border-transparent'
                     }`}
                   >
                     <span
                       className={`absolute inset-y-2 left-2 w-1 rounded-full transition-all ${
-                        isActive ? 'bg-gradient-to-b from-amber-400 to-yellow-500' : 'bg-transparent group-hover:bg-slate-200'
+                        isActive ? 'bg-gradient-to-b from-amber-300 to-amber-500' : 'bg-transparent group-hover:bg-white/30'
                       }`}
                     />
                     <Icon className="w-5 h-5" />
                     <div className="flex flex-col">
                       <span className="font-semibold">{item.label}</span>
                       <span className="text-xs text-slate-400">
-                        {isActive ? 'En cours' : 'Accéder'}
+                        {isActive ? 'En cours' : 'Acceder'}
                       </span>
                     </div>
                   </button>
@@ -549,7 +977,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
               })}
             </nav>
 
-            <div className="p-4 border-t border-slate-200">
+            <div className="p-4 border-t border-white/10">
               <button
                 onClick={signOut}
                 className="w-full flex items-center justify-center space-x-3 px-4 py-3 rounded-xl text-slate-200 hover:bg-red-500/15 hover:text-red-200 transition border border-white/5"
@@ -562,9 +990,9 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
         </aside>
 
         <div className="flex-1 flex flex-col min-h-screen">
-          <header className="sticky top-0 z-30 bg-slate-100/90 backdrop-blur">
+          <header className="sticky top-0 z-30 app-header backdrop-blur">
             <div className="mx-auto max-w-7xl px-6 lg:px-10 py-4">
-              <div className="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="flex items-center justify-between px-4 py-3 rounded-2xl border border-slate-200/80 bg-white/90 shadow-lg shadow-slate-900/10">
                 <div className="flex items-center gap-3">
                   <button
                     onClick={() => setSidebarOpen(true)}
@@ -582,11 +1010,27 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
                 </div>
 
                 <div className="flex items-center gap-3">
-                  {profile?.filiale_id && (
+                  {(isAdmin || profile?.filiale_id) && (
                     <span className="pill bg-amber-50 text-amber-700 border border-amber-100">
                       <MapPin className="w-3.5 h-3.5" />
-                      {filialeLabel || 'Filiale active'}
+                      {filialeLabel || (isAdmin ? 'Toutes les filiales' : 'Filiale active')}
                     </span>
+                  )}
+                  {isAdmin && filiales.length > 0 && (
+                    <div className="hidden lg:block">
+                      <select
+                        value={activeFilialeId || ''}
+                        onChange={(e) => setActiveFilialeId(e.target.value || null)}
+                        className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:border-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-100"
+                      >
+                        <option value="">Toutes les filiales</option>
+                        {filiales.map((filiale) => (
+                          <option key={filiale.id} value={filiale.id}>
+                            {filiale.nom || filiale.code || filiale.id}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   )}
                   <button
                     onClick={onToggleTheme}
@@ -872,6 +1316,7 @@ export function MainLayout({ children, currentView, onViewChange, theme = 'light
           />
         )}
       </div>
-    </div>
+      </div>
+    </FilialeContext.Provider>
   );
 }

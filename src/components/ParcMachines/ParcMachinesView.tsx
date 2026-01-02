@@ -2,15 +2,23 @@ import { useEffect, useState } from 'react';
 import { Plus, X, MapPin } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFilialeContext } from '../../contexts/FilialeContext';
 import type { Database } from '../../lib/database.types';
+import { ModalTabs } from '../ui/ModalTabs';
+import { useListeReference } from '../../hooks/useListeReference';
 
 type Machine = Database['public']['Tables']['parc_machines']['Row'];
 
 export function ParcMachinesView() {
   const { profile } = useAuth();
+  const { filialeId, isAdmin } = useFilialeContext();
+  const { modeles, modeleLookup, pays } = useListeReference();
+  const modeleListId = 'parc-machines-modeles';
+  const paysListId = 'parc-machines-pays';
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [modalTab, setModalTab] = useState<'machine' | 'client' | 'notes'>('machine');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -30,15 +38,14 @@ export function ParcMachinesView() {
   useEffect(() => {
     const load = async () => {
       if (!profile) return;
-      const isAdmin = profile.role === 'admin_siege';
-      const filialeId = profile.filiale_id;
+
       const query = supabase.from('parc_machines').select('*').order('created_at', { ascending: false });
-      if (!isAdmin) {
-        if (!filialeId) {
-          setMachines([]);
-          setLoading(false);
-          return;
-        }
+      if (!isAdmin && !filialeId) {
+        setMachines([]);
+        setLoading(false);
+        return;
+      }
+      if (filialeId) {
         const { data, error } = await query.eq('filiale_vendeur_id', filialeId).limit(50);
         if (!error && data) setMachines(data as Machine[]);
         setLoading(false);
@@ -49,12 +56,22 @@ export function ParcMachinesView() {
       setLoading(false);
     };
     load();
-  }, [profile]);
+  }, [filialeId, isAdmin, profile]);
+
+  const handleModeleChange = (value: string) => {
+    const trimmed = value.trim();
+    const match = trimmed ? modeleLookup.get(trimmed.toLowerCase()) : undefined;
+    setFormData((prev) => ({
+      ...prev,
+      modele: value,
+      marque: match?.marque ?? prev.marque,
+    }));
+  };
 
   const submit = async () => {
     if (!profile) return;
-    if (!profile.filiale_id) {
-      setSubmitError('Associez une filiale au profil avant de saisir une machine.');
+    if (!filialeId) {
+      setSubmitError(isAdmin ? 'Selectionnez une filiale active avant de saisir une machine.' : 'Associez une filiale au profil avant de saisir une machine.');
       return;
     }
     if (!formData.numero_serie || !formData.marque || !formData.modele || !formData.client_nom || !formData.pays) {
@@ -75,7 +92,7 @@ export function ParcMachinesView() {
       date_vente: formData.date_vente || null,
       coordonnees_gps: formData.coordonnees_gps || null,
       commentaires: formData.commentaires || null,
-      filiale_vendeur_id: profile.filiale_id,
+      filiale_vendeur_id: filialeId,
     };
     const { error } = await supabase.from('parc_machines').insert(payload);
     if (error) {
@@ -99,9 +116,9 @@ export function ParcMachinesView() {
       commentaires: '',
     });
     const query = supabase.from('parc_machines').select('*').order('created_at', { ascending: false });
-    const { data } = profile.role === 'admin_siege'
-      ? await query.limit(50)
-      : await query.eq('filiale_vendeur_id', profile.filiale_id).limit(50);
+    const { data } = filialeId
+      ? await query.eq('filiale_vendeur_id', filialeId).limit(50)
+      : await query.limit(50);
     if (data) setMachines(data as Machine[]);
   };
 
@@ -121,7 +138,11 @@ export function ParcMachinesView() {
           <p className="text-slate-600">Suivi des machines vendues et statut terrain</p>
         </div>
         <button
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setSubmitError('');
+            setIsModalOpen(true);
+            setModalTab('machine');
+          }}
           className="flex items-center space-x-2 bg-gradient-to-r from-indigo-500 to-blue-600 text-white px-5 py-2.5 rounded-lg shadow hover:from-indigo-600 hover:to-blue-700"
         >
           <Plus className="w-5 h-5" />
@@ -180,8 +201,8 @@ export function ParcMachinesView() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 relative">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute right-4 top-4 text-slate-500 hover:text-slate-800"
@@ -190,103 +211,136 @@ export function ParcMachinesView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Ajouter une machine au parc</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Numéro de série</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.numero_serie}
-                  onChange={(e) => setFormData({ ...formData, numero_serie: e.target.value })}
-                />
+            <ModalTabs
+              tabs={[
+                { id: 'machine', label: 'Machine' },
+                { id: 'client', label: 'Client' },
+                { id: 'notes', label: 'Notes' },
+              ]}
+              activeTab={modalTab}
+              onChange={(key) => setModalTab(key as typeof modalTab)}
+            />
+            {modalTab === 'machine' && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Numero de serie</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.numero_serie}
+                    onChange={(e) => setFormData({ ...formData, numero_serie: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Marque</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.marque}
+                    onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Modele</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    list={modeleListId}
+                    value={formData.modele}
+                    onChange={(e) => handleModeleChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Annee de fabrication</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.annee_fabrication}
+                    onChange={(e) => setFormData({ ...formData, annee_fabrication: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Statut</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.statut}
+                    onChange={(e) => setFormData({ ...formData, statut: e.target.value })}
+                  >
+                    <option value="Actif">Actif</option>
+                    <option value="Inactif">Inactif</option>
+                    <option value="Vendu_occasion">Vendu occasion</option>
+                    <option value="Hors_service">Hors service</option>
+                  </select>
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Marque</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.marque}
-                  onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
-                />
+            )}
+            {modalTab === 'client' && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Client</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.client_nom}
+                    onChange={(e) => setFormData({ ...formData, client_nom: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Pays</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    list={paysListId}
+                    value={formData.pays}
+                    onChange={(e) => setFormData({ ...formData, pays: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Ville</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.ville}
+                    onChange={(e) => setFormData({ ...formData, ville: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Date de vente</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.date_vente}
+                    onChange={(e) => setFormData({ ...formData, date_vente: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium text-slate-700">Coordonnees GPS</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.coordonnees_gps}
+                    onChange={(e) => setFormData({ ...formData, coordonnees_gps: e.target.value })}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Modèle</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.modele}
-                  onChange={(e) => setFormData({ ...formData, modele: e.target.value })}
-                />
+            )}
+            {modalTab === 'notes' && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-2 md:col-span-2">
+                  <label className="text-sm font-medium text-slate-700">Commentaires</label>
+                  <textarea
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.commentaires}
+                    onChange={(e) => setFormData({ ...formData, commentaires: e.target.value })}
+                    rows={4}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Client</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.client_nom}
-                  onChange={(e) => setFormData({ ...formData, client_nom: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Pays</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.pays}
-                  onChange={(e) => setFormData({ ...formData, pays: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Ville</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.ville}
-                  onChange={(e) => setFormData({ ...formData, ville: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Année de fabrication</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.annee_fabrication}
-                  onChange={(e) => setFormData({ ...formData, annee_fabrication: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Statut</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.statut}
-                  onChange={(e) => setFormData({ ...formData, statut: e.target.value })}
-                >
-                  <option value="Actif">Actif</option>
-                  <option value="Inactif">Inactif</option>
-                  <option value="Vendu_occasion">Vendu occasion</option>
-                  <option value="Hors_service">Hors service</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Date de vente</label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.date_vente}
-                  onChange={(e) => setFormData({ ...formData, date_vente: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Coordonnées GPS</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.coordonnees_gps}
-                  onChange={(e) => setFormData({ ...formData, coordonnees_gps: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium text-slate-700">Commentaires</label>
-                <textarea
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.commentaires}
-                  onChange={(e) => setFormData({ ...formData, commentaires: e.target.value })}
-                />
-              </div>
-            </div>
+            )}
+
+            <datalist id={modeleListId}>
+              {modeles.map((modele) => (
+                <option key={modele.id} value={modele.label} />
+              ))}
+            </datalist>
+            <datalist id={paysListId}>
+              {pays.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
 
             {submitError && (
               <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -316,3 +370,8 @@ export function ParcMachinesView() {
     </>
   );
 }
+
+
+
+
+

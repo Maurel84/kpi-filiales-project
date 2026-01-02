@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ComponentType } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFilialeContext } from '../../contexts/FilialeContext';
 import { supabase } from '../../lib/supabase';
 import {
   Package,
@@ -20,7 +21,7 @@ interface Stats {
   stockObsolete: number;
   kpisPending: number;
   ventesMonth: number;
-  margeNegative: number;
+  ventesIncompletes: number;
   actionsRetard: number;
   pipeline90: number;
 }
@@ -31,7 +32,7 @@ interface FilialePerformance {
   code: string;
   devise: string;
   ca: number;
-  marge: number;
+  ventesIncompletes: number;
   stockRisque: number;
   pipeline90: number;
   actionsRetard: number;
@@ -66,6 +67,7 @@ const toneStyles = {
 
 export function Dashboard({ onNavigate }: DashboardProps) {
   const { profile } = useAuth();
+  const { filialeId, isAdmin } = useFilialeContext();
   const [stats, setStats] = useState<Stats>({
     totalVentes: 0,
     montantVentes: 0,
@@ -73,23 +75,22 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     stockObsolete: 0,
     kpisPending: 0,
     ventesMonth: 0,
-    margeNegative: 0,
+    ventesIncompletes: 0,
     actionsRetard: 0,
     pipeline90: 0,
   });
   const [filialePerformance, setFilialePerformance] = useState<FilialePerformance[]>([]);
   const [loading, setLoading] = useState(true);
-  const isAdmin = profile?.role === 'admin_siege';
 
   const loadStats = useCallback(async () => {
     if (!profile) return;
 
     type VenteStatRow = {
-      prix_vente_ht: number | null;
+      ca_ht: number | null;
       date_vente: string | null;
       filiale_id: string | null;
-      prix_revient?: number | null;
-      marge?: number | null;
+      vendeur?: string | null;
+      marque?: string | null;
     };
     type OpportuniteRow = {
       id: string;
@@ -103,16 +104,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     const currentMonth = today.toISOString().slice(0, 7);
     const horizon90 = new Date(today);
     horizon90.setDate(horizon90.getDate() + 90);
-    const isAdminUser = profile.role === 'admin_siege';
-    const filialeFilter = isAdminUser ? {} : { filiale_id: profile.filiale_id };
+    const filialeFilter = filialeId ? { filiale_id: filialeId } : {};
 
-    const fetchVentes = async () => (
+    const fetchVentes = async () =>
       supabase
         .from('ventes')
-        .select('*')
-        .eq('statut', 'Facturee')
-        .match(filialeFilter)
-    );
+        .select('id, ca_ht, date_vente, filiale_id, vendeur, marque')
+        .match(filialeFilter);
 
     const fetchOpportunites = async () => (
       supabase
@@ -154,7 +152,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     const filialesData = filialesRes.data ?? [];
 
     const totalVentes = ventesData.length;
-    const montantVentes = ventesData.reduce((sum, v) => sum + (v.prix_vente_ht || 0), 0);
+    const montantVentes = ventesData.reduce((sum, v) => sum + (v.ca_ht || 0), 0);
     const stockItems = stockData.length;
     const ventesMonth = ventesData.filter((v) => v.date_vente?.startsWith(currentMonth)).length;
 
@@ -173,7 +171,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         code: filiale.code,
         devise: filiale.devise || 'XAF',
         ca: 0,
-        marge: 0,
+        ventesIncompletes: 0,
         stockRisque: 0,
         pipeline90: 0,
         actionsRetard: 0,
@@ -189,7 +187,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           code: '',
           devise: 'XAF',
           ca: 0,
-          marge: 0,
+          ventesIncompletes: 0,
           stockRisque: 0,
           pipeline90: 0,
           actionsRetard: 0,
@@ -198,19 +196,17 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       return performance.get(filialeId) || null;
     };
 
-    let margeNegative = 0;
+    let ventesIncompletes = 0;
     ventesData.forEach((vente) => {
       const perf = ensurePerformance(vente.filiale_id || null);
-      const ca = vente.prix_vente_ht || 0;
-      const marge = vente.marge !== null && vente.marge !== undefined
-        ? Number(vente.marge)
-        : (vente.prix_revient !== null && vente.prix_revient !== undefined
-          ? Number(vente.prix_vente_ht || 0) - Number(vente.prix_revient)
-          : 0);
-      if (marge < 0) margeNegative += 1;
+      const ca = vente.ca_ht || 0;
+      const isIncomplete = !vente.vendeur || !vente.marque || !vente.ca_ht;
+      if (isIncomplete) {
+        ventesIncompletes += 1;
+      }
       if (perf) {
         perf.ca += Number(ca) || 0;
-        perf.marge += Number(marge) || 0;
+        if (isIncomplete) perf.ventesIncompletes += 1;
       }
     });
 
@@ -263,7 +259,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       stockObsolete,
       kpisPending,
       ventesMonth,
-      margeNegative,
+      ventesIncompletes,
       actionsRetard,
       pipeline90,
     });
@@ -271,7 +267,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     setFilialePerformance(performanceRows);
 
     setLoading(false);
-  }, [profile]);
+  }, [filialeId, profile]);
 
   useEffect(() => {
     loadStats();
@@ -398,7 +394,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
         <StatCard
           title="Chiffre d'affaires"
-          value={`${Math.round(stats.montantVentes).toLocaleString()} €`}
+          value={`${Math.round(stats.montantVentes).toLocaleString()} XAF`}
           icon={DollarSign}
           tone="blue"
         />
@@ -474,13 +470,13 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 </div>
               </div>
             )}
-            {stats.margeNegative > 0 && (
+            {stats.ventesIncompletes > 0 && (
               <div className="rounded-xl border border-rose-200 bg-rose-50/80 px-4 py-3 flex items-start gap-3 dark:bg-rose-900/25 dark:border-rose-700/60">
                 <AlertCircle className="w-5 h-5 text-rose-600 dark:text-rose-200 mt-0.5" />
                 <div>
-                  <p className="font-semibold text-rose-900 dark:text-rose-100">Marges negatives</p>
+                  <p className="font-semibold text-rose-900 dark:text-rose-100">Ventes incompletes</p>
                   <p className="text-sm text-rose-800 dark:text-rose-200">
-                    {stats.margeNegative} vente(s) avec marge negative
+                    {stats.ventesIncompletes} vente(s) sans vendeur ou marque
                   </p>
                 </div>
               </div>
@@ -534,7 +530,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                 <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
                   <th className="py-2 px-3">Filiale</th>
                   <th className="py-2 px-3">CA</th>
-                  <th className="py-2 px-3">Marge</th>
+                  <th className="py-2 px-3">Ventes incompletes</th>
                   <th className="py-2 px-3">Pipeline 90j</th>
                   <th className="py-2 px-3">Stock risque</th>
                   <th className="py-2 px-3">Actions retard</th>
@@ -548,8 +544,8 @@ export function Dashboard({ onNavigate }: DashboardProps) {
                       {row.code && <div className="text-xs text-slate-500">{row.code}</div>}
                     </td>
                     <td className="py-2 px-3 text-sm text-slate-700">{formatAmount(row.ca, row.devise)}</td>
-                    <td className={`py-2 px-3 text-sm ${row.marge < 0 ? "text-rose-600 dark:text-rose-200" : "text-emerald-600 dark:text-emerald-200"}`}>
-                      {formatAmount(row.marge, row.devise)}
+                    <td className={`py-2 px-3 text-sm ${row.ventesIncompletes > 0 ? "text-rose-600 dark:text-rose-200" : "text-emerald-600 dark:text-emerald-200"}`}>
+                      {row.ventesIncompletes}
                     </td>
                     <td className="py-2 px-3 text-sm text-slate-700">{formatAmount(row.pipeline90, row.devise)}</td>
                     <td className={`py-2 px-3 text-sm ${row.stockRisque > 0 ? "text-amber-700 font-semibold" : "text-slate-600"}`}>

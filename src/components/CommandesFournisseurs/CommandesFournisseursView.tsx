@@ -1,92 +1,80 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFilialeContext } from '../../contexts/FilialeContext';
 import { supabase } from '../../lib/supabase';
-import { Truck, Package, Calendar, TrendingUp, Filter, X } from 'lucide-react';
-
-type CommandeStatut = 'En_cours' | 'Livree' | 'Partiellement_livree' | 'Annulee';
+import { Truck, Package, Calendar, TrendingUp, Search, AlertTriangle, X } from 'lucide-react';
+import type { Database } from '../../lib/database.types';
+import { ModalTabs } from '../ui/ModalTabs';
+import { useListeReference } from '../../hooks/useListeReference';
 
 interface CommandeFournisseur {
   id: string;
-  numero: string;
-  fournisseur: string;
+  numero_commande: string;
   filiale_id: string;
   date_commande: string;
-  date_livraison_prevue: string | null;
-  statut: CommandeStatut;
-  montant_total: number;
-  devise: string;
-  commentaires: string | null;
+  marque: string | null;
+  modele: string | null;
+  gamme: string | null;
+  prix_achat_ht: number | null;
+  eta: string | null;
 }
 
-type CommandeInsert = {
-  numero: string;
-  fournisseur: string;
+type CommandeInsert = Database['public']['Tables']['commandes_fournisseurs']['Insert'];
+type CommandeForm = Omit<CommandeInsert, 'filiale_id' | 'created_by'> & {
   filiale_id: string | null;
-  date_commande: string;
-  date_livraison_prevue?: string | null;
-  statut: CommandeStatut;
-  montant_total: number;
-  devise: string;
-  commentaires?: string | null;
-  created_by?: string | null;
+  created_by: string | null;
+};
+
+const defaultForm: CommandeForm = {
+  numero_commande: '',
+  date_commande: new Date().toISOString().slice(0, 10),
+  marque: '',
+  modele: '',
+  gamme: '',
+  prix_achat_ht: null,
+  eta: '',
+  filiale_id: null,
+  created_by: null,
 };
 
 export function CommandesFournisseursView() {
   const { profile } = useAuth();
+  const { filialeId, isAdmin } = useFilialeContext();
+  const { modeles, modeleLookup } = useListeReference();
+  const modeleListId = 'commandes-fournisseurs-modeles';
   const [commandes, setCommandes] = useState<CommandeFournisseur[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedStatut, setSelectedStatut] = useState<CommandeStatut | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'commande' | 'produit' | 'finances'>('commande');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const [formData, setFormData] = useState<CommandeInsert>({
-    numero: '',
-    fournisseur: '',
-    date_commande: new Date().toISOString().slice(0, 10),
-    date_livraison_prevue: '',
-    statut: 'En_cours',
-    montant_total: 0,
-    devise: 'XAF',
-    commentaires: '',
-    filiale_id: null,
-    created_by: null,
-  });
-  const [modele, setModele] = useState('');
-  const [gamme, setGamme] = useState('');
+  const [formData, setFormData] = useState<CommandeForm>(defaultForm);
 
   const loadCommandes = useCallback(async () => {
     if (!profile) return;
 
-    const isAdmin = profile.role === 'admin_siege';
-    if (!isAdmin && !profile.filiale_id) {
+    if (!isAdmin && !filialeId) {
       setCommandes([]);
       setLoading(false);
       return;
     }
 
-    const table = supabase.from('commandes_fournisseurs' as any);
-
-    let query = table
-      .select(
-        'id, numero, fournisseur, filiale_id, date_commande, date_livraison_prevue, statut, montant_total, devise, commentaires'
-      )
+    let query = supabase
+      .from('commandes_fournisseurs')
+      .select('id, numero_commande, filiale_id, date_commande, marque, modele, gamme, prix_achat_ht, eta')
       .order('date_commande', { ascending: false });
 
-    if (!isAdmin && profile.filiale_id) {
-      query = query.eq('filiale_id', profile.filiale_id);
-    }
-
-    if (selectedStatut !== 'all') {
-      query = query.eq('statut', selectedStatut);
+    if (filialeId) {
+      query = query.eq('filiale_id', filialeId);
     }
 
     const { data, error } = await query;
     if (!error && data) {
-      setCommandes(data as unknown as CommandeFournisseur[]);
+      setCommandes(data as CommandeFournisseur[]);
     }
     setLoading(false);
-  }, [profile, selectedStatut]);
+  }, [filialeId, isAdmin, profile]);
 
   useEffect(() => {
     loadCommandes();
@@ -96,37 +84,57 @@ export function CommandesFournisseursView() {
     if (!profile) return;
     setFormData((prev) => ({
       ...prev,
-      filiale_id: profile.filiale_id || null,
+      filiale_id: filialeId || null,
       created_by: profile.id,
     }));
-  }, [profile]);
+  }, [filialeId, profile]);
+
+  useEffect(() => {
+    if (isModalOpen) {
+      setActiveTab('commande');
+    }
+  }, [isModalOpen]);
+
+  const handleModeleChange = (value: string) => {
+    const trimmed = value.trim();
+    const match = trimmed ? modeleLookup.get(trimmed.toLowerCase()) : undefined;
+    setFormData((prev) => ({
+      ...prev,
+      modele: value,
+      marque: match?.marque ?? prev.marque,
+      gamme: match?.gamme ?? prev.gamme,
+    }));
+  };
 
   const submitCommande = async () => {
     if (!profile) return;
-    if (!formData.numero) {
-      setSubmitError('Numéro de commande requis.');
+    if (!filialeId) {
+      setSubmitError(
+        isAdmin
+          ? 'Selectionnez une filiale active pour creer une commande.'
+          : 'Associez une filiale pour creer une commande.'
+      );
       return;
     }
-    if (!formData.fournisseur) {
-      setSubmitError('Fournisseur / marque requis.');
+
+    if (!formData.numero_commande || !formData.marque) {
+      setSubmitError('Numero de commande et marque requis.');
       return;
     }
     setSubmitError('');
     setSubmitLoading(true);
-    const commentairesParts = [
-      modele ? `Modèle: ${modele}` : null,
-      gamme ? `Gamme: ${gamme}` : null,
-      (formData.commentaires || '').trim() || null,
-    ].filter(Boolean);
     const payload: CommandeInsert = {
-      ...formData,
-      montant_total: Number(formData.montant_total) || 0,
-      date_livraison_prevue: formData.date_livraison_prevue || null,
-      commentaires: commentairesParts.length > 0 ? commentairesParts.join(' | ') : null,
-      filiale_id: profile.filiale_id || null,
+      numero_commande: formData.numero_commande,
+      date_commande: formData.date_commande,
+      marque: formData.marque || null,
+      modele: formData.modele || null,
+      gamme: formData.gamme || null,
+      prix_achat_ht: formData.prix_achat_ht === null ? null : Number(formData.prix_achat_ht),
+      eta: formData.eta || null,
+      filiale_id: filialeId,
       created_by: profile.id,
     };
-    const { error } = await supabase.from('commandes_fournisseurs' as any).insert(payload);
+    const { error } = await supabase.from('commandes_fournisseurs').insert(payload);
     if (error) {
       setSubmitError(error.message);
       setSubmitLoading(false);
@@ -135,27 +143,38 @@ export function CommandesFournisseursView() {
     setSubmitLoading(false);
     setIsModalOpen(false);
     setFormData({
-      numero: '',
-      fournisseur: '',
-      date_commande: new Date().toISOString().slice(0, 10),
-      date_livraison_prevue: '',
-      statut: 'En_cours',
-      montant_total: 0,
-      devise: 'XAF',
-      commentaires: '',
-      filiale_id: profile.filiale_id || null,
+      ...defaultForm,
+      filiale_id: filialeId || null,
       created_by: profile.id,
     });
-    setModele('');
-    setGamme('');
     loadCommandes();
   };
 
-  const filteredCommandes = commandes.filter(
-    (cmd) =>
-      cmd.numero.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (cmd.fournisseur || '').toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredCommandes = useMemo(() => {
+    const term = searchTerm.toLowerCase();
+    return commandes.filter((cmd) =>
+      [
+        cmd.numero_commande,
+        cmd.marque || '',
+        cmd.modele || '',
+        cmd.gamme || '',
+      ]
+        .join(' ')
+        .toLowerCase()
+        .includes(term)
+    );
+  }, [commandes, searchTerm]);
+
+  const totalAchat = filteredCommandes.reduce((sum, cmd) => sum + (cmd.prix_achat_ht || 0), 0);
+  const commandesSansEta = filteredCommandes.filter((c) => !c.eta).length;
+  const commandesSansPrix = filteredCommandes.filter((c) => c.prix_achat_ht === null).length;
+  const today = new Date();
+  const commandesEtaRetard = filteredCommandes.filter((c) => c.eta && new Date(c.eta) < today).length;
+
+  const isEtaOverdue = (eta: string | null) => {
+    if (!eta) return false;
+    return new Date(eta) < new Date();
+  };
 
   if (loading) {
     return (
@@ -165,24 +184,13 @@ export function CommandesFournisseursView() {
     );
   }
 
-  const totalAchat = filteredCommandes.reduce((sum, cmd) => sum + cmd.montant_total, 0);
-  const commandesEnCours = filteredCommandes.filter(
-    (c) => c.statut === 'En_cours' || c.statut === 'Partiellement_livree'
-  ).length;
-  const commandesRecues = filteredCommandes.filter((c) => c.statut === 'Livree').length;
-
-  const isETAOverdue = (eta: string | null, statut: string) => {
-    if (!eta || statut === 'Livree' || statut === 'Annulee') return false;
-    return new Date(eta) < new Date();
-  };
-
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900 mb-2">Commandes Fournisseurs</h1>
           <p className="text-slate-600">
-            Gestion des commandes fournisseurs et suivi des livraisons (aligné sur l’état PDF)
+            Etat CF : Date, Numero, Marque, Modele, Gamme, Prix achat HT, ETA
           </p>
         </div>
         <button
@@ -197,63 +205,56 @@ export function CommandesFournisseursView() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="bg-white rounded-lg border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-slate-600">Total Commandes</p>
-            <Truck className="w-5 h-5 text-blue-500" />
+            <p className="text-sm text-slate-600">Total commandes</p>
+            <Truck className="w-5 h-5 text-emerald-500" />
           </div>
           <p className="text-3xl font-bold text-slate-900">{filteredCommandes.length}</p>
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-slate-600">En Cours</p>
-            <Package className="w-5 h-5 text-amber-500" />
+            <p className="text-sm text-slate-600">Sans ETA</p>
+            <Calendar className="w-5 h-5 text-amber-500" />
           </div>
-          <p className="text-3xl font-bold text-slate-900">{commandesEnCours}</p>
+          <p className="text-3xl font-bold text-slate-900">{commandesSansEta}</p>
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-slate-600">Livrées</p>
-            <Calendar className="w-5 h-5 text-emerald-500" />
+            <p className="text-sm text-slate-600">ETA en retard</p>
+            <AlertTriangle className="w-5 h-5 text-rose-500" />
           </div>
-          <p className="text-3xl font-bold text-slate-900">{commandesRecues}</p>
+          <p className="text-3xl font-bold text-slate-900">{commandesEtaRetard}</p>
         </div>
 
         <div className="bg-white rounded-lg border border-slate-200 p-6">
           <div className="flex items-center justify-between mb-2">
-            <p className="text-sm text-slate-600">Total Achats</p>
+            <p className="text-sm text-slate-600">Total achats</p>
             <TrendingUp className="w-5 h-5 text-purple-500" />
           </div>
           <p className="text-2xl font-bold text-slate-900">
             {totalAchat.toLocaleString()} <span className="text-sm text-slate-500">XAF</span>
           </p>
+          {commandesSansPrix > 0 && (
+            <p className="mt-1 text-xs text-amber-600">{commandesSansPrix} commande(s) sans prix</p>
+          )}
         </div>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-slate-900">Liste des Commandes (ETAT CF)</h2>
-          <div className="flex items-center space-x-3">
-            <Filter className="w-5 h-5 text-slate-400" />
-            <select
-              value={selectedStatut}
-              onChange={(e) => setSelectedStatut(e.target.value as CommandeStatut | 'all')}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-            >
-              <option value="all">Tous les statuts</option>
-              <option value="En_cours">En cours</option>
-              <option value="Partiellement_livree">Partiellement livrée</option>
-              <option value="Livree">Livrée</option>
-              <option value="Annulee">Annulée</option>
-            </select>
-
-            <input
-              type="text"
-              placeholder="Rechercher..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-            />
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-6">
+          <h2 className="text-lg font-semibold text-slate-900">Liste des commandes (Etat CF)</h2>
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            <div className="relative w-full sm:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Rechercher..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              />
+            </div>
           </div>
         </div>
 
@@ -262,78 +263,66 @@ export function CommandesFournisseursView() {
             <thead>
               <tr className="border-b border-slate-200">
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">N° Commande</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marque / Fournisseur</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Modèle / Gamme</th>
-                <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Prix Achat HT</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Numero</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marque</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Modele</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Gamme</th>
+                <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Prix achat HT</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">ETA</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Statut</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {filteredCommandes.map((cmd) => {
-                const commentaireLabel = cmd.commentaires || '-';
-                return (
-                  <tr key={cmd.id} className="hover:bg-slate-50 transition">
-                    <td className="py-4 px-4 text-sm text-slate-600">
-                      {new Date(cmd.date_commande).toLocaleDateString('fr-FR')}
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="font-medium text-slate-900">{cmd.numero}</span>
-                    </td>
-                    <td className="py-4 px-4 text-slate-900">{cmd.fournisseur}</td>
-                    <td className="py-4 px-4 text-slate-900">
-                      <span className="text-sm text-slate-700">{commentaireLabel}</span>
-                    </td>
-                    <td className="py-4 px-4 text-right">
-                      <span className="font-semibold text-slate-900">
-                        {cmd.montant_total.toLocaleString()}
-                      </span>
-                      <span className="text-xs text-slate-500 ml-1">{cmd.devise}</span>
-                    </td>
-                    <td className="py-4 px-4">
-                      {cmd.date_livraison_prevue ? (
-                        <div>
-                          <p
-                            className={`text-sm ${
-                              isETAOverdue(cmd.date_livraison_prevue, cmd.statut)
-                                ? 'text-red-600 font-semibold'
-                                : 'text-slate-600'
-                            }`}
-                          >
-                            {new Date(cmd.date_livraison_prevue).toLocaleDateString('fr-FR')}
-                          </p>
-                          {isETAOverdue(cmd.date_livraison_prevue, cmd.statut) && (
-                            <p className="text-xs text-red-500">Retard</p>
-                          )}
-                        </div>
-                      ) : (
-                        '-'
-                      )}
-                    </td>
-                    <td className="py-4 px-4">
-                      <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800">
-                        {cmd.statut}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filteredCommandes.map((cmd) => (
+                <tr key={cmd.id} className="hover:bg-slate-50 transition">
+                  <td className="py-4 px-4 text-sm text-slate-600">
+                    {new Date(cmd.date_commande).toLocaleDateString('fr-FR')}
+                  </td>
+                  <td className="py-4 px-4">
+                    <span className="font-medium text-slate-900">{cmd.numero_commande}</span>
+                  </td>
+                  <td className="py-4 px-4 text-slate-900">{cmd.marque || '-'}</td>
+                  <td className="py-4 px-4 text-slate-900">{cmd.modele || '-'}</td>
+                  <td className="py-4 px-4 text-slate-900">{cmd.gamme || '-'}</td>
+                  <td className="py-4 px-4 text-right">
+                    <span className="font-semibold text-slate-900">
+                      {cmd.prix_achat_ht ? cmd.prix_achat_ht.toLocaleString() : '-'}
+                    </span>
+                  </td>
+                  <td className="py-4 px-4">
+                    {cmd.eta ? (
+                      <div>
+                        <p
+                          className={`text-sm ${
+                            isEtaOverdue(cmd.eta) ? 'text-rose-600 font-semibold' : 'text-slate-600'
+                          }`}
+                        >
+                          {new Date(cmd.eta).toLocaleDateString('fr-FR')}
+                        </p>
+                        {isEtaOverdue(cmd.eta) && (
+                          <p className="text-xs text-rose-500">Retard</p>
+                        )}
+                      </div>
+                    ) : (
+                      '-'
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
 
           {filteredCommandes.length === 0 && (
             <div className="text-center py-12">
-              <Truck className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-              <p className="text-slate-600">Aucune commande fournisseur trouvée</p>
+              <Package className="w-12 h-12 text-slate-300 mx-auto mb-4" />
+              <p className="text-slate-600">Aucune commande fournisseur trouvee</p>
             </div>
           )}
         </div>
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 relative">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute right-4 top-4 text-slate-500 hover:text-slate-800"
@@ -342,100 +331,99 @@ export function CommandesFournisseursView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Nouvelle commande fournisseur</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">N° commande</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.numero}
-                  onChange={(e) => setFormData({ ...formData, numero: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Date</label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.date_commande}
-                  onChange={(e) => setFormData({ ...formData, date_commande: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Marque / Fournisseur</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.fournisseur}
-                  onChange={(e) => setFormData({ ...formData, fournisseur: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Modèle</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={modele}
-                  onChange={(e) => setModele(e.target.value)}
-                  placeholder="Ex: MF 7715"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Gamme</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={gamme}
-                  onChange={(e) => setGamme(e.target.value)}
-                  placeholder="Ex: Tracteurs / Chariots"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Prix achat HT</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.montant_total}
-                  onChange={(e) => setFormData({ ...formData, montant_total: Number(e.target.value) })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Devise</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.devise}
-                  onChange={(e) => setFormData({ ...formData, devise: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">ETA</label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.date_livraison_prevue || ''}
-                  onChange={(e) => setFormData({ ...formData, date_livraison_prevue: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Statut</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.statut}
-                  onChange={(e) => setFormData({ ...formData, statut: e.target.value as CommandeStatut })}
-                >
-                  <option value="En_cours">En cours</option>
-                  <option value="Partiellement_livree">Partiellement livrée</option>
-                  <option value="Livree">Livrée</option>
-                  <option value="Annulee">Annulée</option>
-                </select>
-              </div>
-            </div>
+            <ModalTabs
+              tabs={[
+                { id: 'commande', label: 'Commande' },
+                { id: 'produit', label: 'Produit' },
+                { id: 'finances', label: 'Finances' },
+              ]}
+              activeTab={activeTab}
+              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+            />
 
-            <div className="space-y-2 mt-4">
-              <label className="text-sm font-medium text-slate-700">Notes</label>
-              <textarea
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                rows={3}
-                value={formData.commentaires || ''}
-                onChange={(e) => setFormData({ ...formData, commentaires: e.target.value })}
-              />
-            </div>
+            {activeTab === 'commande' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Numero commande</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.numero_commande}
+                    onChange={(e) => setFormData({ ...formData, numero_commande: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Date</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.date_commande}
+                    onChange={(e) => setFormData({ ...formData, date_commande: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'produit' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Marque</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.marque || ''}
+                    onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Modele</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    list={modeleListId}
+                    value={formData.modele || ''}
+                    onChange={(e) => handleModeleChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Gamme</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.gamme || ''}
+                    onChange={(e) => setFormData({ ...formData, gamme: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'finances' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Prix achat HT</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.prix_achat_ht ?? ''}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setFormData({ ...formData, prix_achat_ht: value === '' ? null : Number(value) });
+                    }}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">ETA</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.eta || ''}
+                    onChange={(e) => setFormData({ ...formData, eta: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+
+            <datalist id={modeleListId}>
+              {modeles.map((modele) => (
+                <option key={modele.id} value={modele.label} />
+              ))}
+            </datalist>
 
             {submitError && (
               <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -453,7 +441,7 @@ export function CommandesFournisseursView() {
               </button>
               <button
                 onClick={submitCommande}
-                disabled={submitLoading || !formData.numero || !formData.fournisseur}
+                disabled={submitLoading || !formData.numero_commande || !formData.marque}
                 className="px-5 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-teal-600 text-white font-semibold shadow hover:from-emerald-600 hover:to-teal-700 disabled:opacity-60"
               >
                 {submitLoading ? 'Enregistrement...' : 'Enregistrer'}
@@ -465,3 +453,8 @@ export function CommandesFournisseursView() {
     </div>
   );
 }
+
+
+
+
+

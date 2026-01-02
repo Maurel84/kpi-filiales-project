@@ -1,9 +1,22 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart3, ChevronDown, ChevronUp, Filter, Plus, TrendingUp, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFilialeContext } from '../../contexts/FilialeContext';
 import { supabase } from '../../lib/supabase';
+import type { Database } from '../../lib/database.types';
+import { ModalTabs } from '../ui/ModalTabs';
 
 type Marque = { id: string; nom: string };
+type PdmInsert = Database['public']['Tables']['pdm_entries']['Insert'];
+type SourceType = NonNullable<PdmInsert['source_industrie_type']>;
+type PdmForm = {
+  marque: string;
+  categorie: string;
+  industrie: string;
+  src: string;
+  source_industrie_type: SourceType | '';
+  annee: number;
+};
 
 type PDMEntryRow = {
   id: string;
@@ -16,7 +29,7 @@ type PDMEntryRow = {
   annee: number | null;
 };
 
-const SOURCE_OPTIONS = ['AEM TABLE', 'WITS Shipment', 'WITS Order'];
+const SOURCE_OPTIONS: SourceType[] = ['AEM TABLE', 'WITS Shipment', 'WITS Order'];
 
 const NARDI_CATEGORIES = [
   'Lavorazione e preparazione del terreno',
@@ -184,7 +197,7 @@ const SOURCE_GUIDE = [
 
 const normalizeMarque = (value: string) => value.trim().toUpperCase();
 
-const defaultForm = {
+const defaultForm: PdmForm = {
   marque: '',
   categorie: '',
   industrie: '',
@@ -195,15 +208,17 @@ const defaultForm = {
 
 export function PDMView() {
   const { profile } = useAuth();
+  const { filialeId, isAdmin } = useFilialeContext();
   const [marques, setMarques] = useState<Marque[]>([]);
   const [pdmEntries, setPdmEntries] = useState<PDMEntryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMarque, setSelectedMarque] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'categorie' | 'sources'>('categorie');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
-  const [formData, setFormData] = useState(defaultForm);
+  const [formData, setFormData] = useState<PdmForm>(defaultForm);
   const [showColumnGuide, setShowColumnGuide] = useState(true);
   const [showCategoryGuide, setShowCategoryGuide] = useState(true);
 
@@ -234,8 +249,8 @@ export function PDMView() {
       .order('marque', { ascending: true })
       .order('categorie', { ascending: true });
 
-    if (profile.role !== 'admin_siege' && profile.filiale_id) {
-      query = query.eq('filiale_id', profile.filiale_id);
+    if (filialeId) {
+      query = query.eq('filiale_id', filialeId);
     }
 
     if (selectedMarque !== 'all') {
@@ -259,8 +274,22 @@ export function PDMView() {
     setFormData((prev) => ({ ...prev, annee: selectedYear }));
   }, [selectedYear]);
 
+  useEffect(() => {
+    if (isModalOpen) {
+      setActiveTab('categorie');
+    }
+  }, [isModalOpen]);
+
   const submitPdmEntry = async () => {
     if (!profile) return;
+    if (!filialeId) {
+      setSubmitError(
+        isAdmin
+          ? 'Selectionnez une filiale active pour saisir une PDM.'
+          : 'Associez une filiale pour saisir une PDM.'
+      );
+      return;
+    }
     const marque = formData.marque.trim();
     const categorie = formData.categorie.trim();
     if (!marque || !categorie) {
@@ -284,14 +313,16 @@ export function PDMView() {
       return;
     }
 
-    const payload = {
+    const sourceType: PdmInsert['source_industrie_type'] =
+      formData.source_industrie_type === '' ? null : formData.source_industrie_type;
+    const payload: PdmInsert = {
       marque,
       categorie,
       annee: Number(formData.annee),
       industrie: industrieValue,
       src: srcValue,
-      source_industrie_type: formData.source_industrie_type || null,
-      filiale_id: profile.filiale_id || null,
+      source_industrie_type: sourceType,
+      filiale_id: filialeId || null,
       created_by: profile.id,
     };
 
@@ -540,8 +571,8 @@ export function PDMView() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl p-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 relative">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute right-4 top-4 text-slate-500 hover:text-slate-800"
@@ -550,97 +581,117 @@ export function PDMView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Ajouter une part de marche</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Marque</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.marque}
-                  onChange={(e) =>
-                    setFormData({
-                      ...formData,
-                      marque: e.target.value,
-                      categorie: '',
-                    })
-                  }
-                >
-                  <option value="">Selectionner</option>
-                  {marqueOptions.map((nom) => (
-                    <option key={nom} value={nom}>
-                      {nom}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <ModalTabs
+              tabs={[
+                { id: 'categorie', label: 'Categorie' },
+                { id: 'sources', label: 'Sources' },
+              ]}
+              activeTab={activeTab}
+              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+            />
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Categorie</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.categorie}
-                  onChange={(e) => setFormData({ ...formData, categorie: e.target.value })}
-                  list="pdm-categories"
-                  placeholder="Ex: TELEHANDLERS"
-                />
-                <datalist id="pdm-categories">
-                  {categorieOptions.map((categorie) => (
-                    <option key={categorie} value={categorie} />
-                  ))}
-                </datalist>
-              </div>
+            {activeTab === 'categorie' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Marque</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.marque}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        marque: e.target.value,
+                        categorie: '',
+                      })
+                    }
+                  >
+                    <option value="">Selectionner</option>
+                    {marqueOptions.map((nom) => (
+                      <option key={nom} value={nom}>
+                        {nom}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Annee</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.annee}
-                  onChange={(e) => setFormData({ ...formData, annee: Number(e.target.value) })}
-                  min={2023}
-                  max={2030}
-                />
-              </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Categorie</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.categorie}
+                    onChange={(e) => setFormData({ ...formData, categorie: e.target.value })}
+                    list="pdm-categories"
+                    placeholder="Ex: TELEHANDLERS"
+                  />
+                  <datalist id="pdm-categories">
+                    {categorieOptions.map((categorie) => (
+                      <option key={categorie} value={categorie} />
+                    ))}
+                  </datalist>
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Source industrie</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.source_industrie_type}
-                  onChange={(e) => setFormData({ ...formData, source_industrie_type: e.target.value })}
-                >
-                  <option value="">Selectionner</option>
-                  {SOURCE_OPTIONS.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Annee</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.annee}
+                    onChange={(e) => setFormData({ ...formData, annee: Number(e.target.value) })}
+                    min={2023}
+                    max={2030}
+                  />
+                </div>
               </div>
+            )}
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Industrie</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.industrie}
-                  onChange={(e) => setFormData({ ...formData, industrie: e.target.value })}
-                  min={0}
-                  step="0.01"
-                />
-              </div>
+            {activeTab === 'sources' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Source industrie</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.source_industrie_type}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        source_industrie_type: e.target.value ? (e.target.value as SourceType) : '',
+                      })
+                    }
+                  >
+                    <option value="">Selectionner</option>
+                    {SOURCE_OPTIONS.map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">SRC</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.src}
-                  onChange={(e) => setFormData({ ...formData, src: e.target.value })}
-                  min={0}
-                  step="0.01"
-                />
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Industrie</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.industrie}
+                    onChange={(e) => setFormData({ ...formData, industrie: e.target.value })}
+                    min={0}
+                    step="0.01"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">SRC</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.src}
+                    onChange={(e) => setFormData({ ...formData, src: e.target.value })}
+                    min={0}
+                    step="0.01"
+                  />
+                </div>
               </div>
-            </div>
+            )}
 
             {submitError && (
               <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -670,3 +721,8 @@ export function PDMView() {
     </>
   );
 }
+
+
+
+
+

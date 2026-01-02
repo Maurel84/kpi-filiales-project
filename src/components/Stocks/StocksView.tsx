@@ -1,8 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Plus, Search, AlertTriangle, Package, Download, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFilialeContext } from '../../contexts/FilialeContext';
 import { supabase } from '../../lib/supabase';
 import type { Database } from '../../lib/database.types';
+import { ModalTabs } from '../ui/ModalTabs';
+import { useListeReference } from '../../hooks/useListeReference';
 
 type StockItem = Database['public']['Tables']['stock_items']['Row'];
 
@@ -28,11 +31,16 @@ const defaultForm: StockForm = {
 
 export function StocksView() {
   const { profile } = useAuth();
+  const { filialeId, isAdmin } = useFilialeContext();
+  const { modeles, modeleLookup, pays } = useListeReference();
+  const modeleListId = 'stocks-modeles';
+  const paysListId = 'stocks-pays';
   const [stocks, setStocks] = useState<StockItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<StockStatus | 'all'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'produit' | 'suivi'>('produit');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState<StockForm>(defaultForm);
@@ -45,8 +53,8 @@ export function StocksView() {
       .select('id, filiale_id, statut, marque, modele, numero_serie, gamme, pays, date_entree, prix_revient')
       .order('date_entree', { ascending: false });
 
-    if (profile.role !== 'admin_siege' && profile.filiale_id) {
-      query = query.eq('filiale_id', profile.filiale_id);
+    if (filialeId) {
+      query = query.eq('filiale_id', filialeId);
     }
 
     if (statusFilter !== 'all') {
@@ -58,7 +66,7 @@ export function StocksView() {
       setStocks(data as StockItem[]);
     }
     setLoading(false);
-  }, [profile, statusFilter]);
+  }, [filialeId, profile, statusFilter]);
 
   useEffect(() => {
     loadStocks();
@@ -68,10 +76,27 @@ export function StocksView() {
     if (!profile) return;
     setFormData((prev) => ({
       ...prev,
-      filiale_id: profile.filiale_id || null,
+      filiale_id: filialeId || null,
       created_by: profile.id,
     }));
-  }, [profile]);
+  }, [filialeId, profile]);
+
+  useEffect(() => {
+    if (isModalOpen) {
+      setActiveTab('produit');
+    }
+  }, [isModalOpen]);
+
+  const handleModeleChange = (value: string) => {
+    const trimmed = value.trim();
+    const match = trimmed ? modeleLookup.get(trimmed.toLowerCase()) : undefined;
+    setFormData((prev) => ({
+      ...prev,
+      modele: value,
+      marque: match?.marque ?? prev.marque,
+      gamme: match?.gamme ?? prev.gamme,
+    }));
+  };
 
   const submitStock = async () => {
     if (!profile) return;
@@ -79,8 +104,8 @@ export function StocksView() {
       setSubmitError('Marque et modele requis.');
       return;
     }
-    if (!profile.filiale_id) {
-      setSubmitError('Filiale requise pour enregistrer un stock.');
+    if (!filialeId) {
+      setSubmitError(isAdmin ? 'Selectionnez une filiale active pour enregistrer un stock.' : 'Filiale requise pour enregistrer un stock.');
       return;
     }
     setSubmitError('');
@@ -95,7 +120,7 @@ export function StocksView() {
       date_entree: formData.date_entree || new Date().toISOString().slice(0, 10),
       prix_revient: formData.prix_revient ? Number(formData.prix_revient) : null,
       statut: formData.statut,
-      filiale_id: profile.filiale_id,
+      filiale_id: filialeId,
       created_by: profile.id,
     };
 
@@ -110,7 +135,7 @@ export function StocksView() {
     setFormData({
       ...defaultForm,
       date_entree: new Date().toISOString().slice(0, 10),
-      filiale_id: profile.filiale_id,
+      filiale_id: filialeId,
       created_by: profile.id,
     });
     loadStocks();
@@ -308,87 +333,116 @@ export function StocksView() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 relative">
             <button onClick={() => setIsModalOpen(false)} className="absolute right-4 top-4 text-slate-500 hover:text-slate-800">
               <X className="w-5 h-5" />
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Ajouter au stock</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Marque</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.marque || ''}
-                  onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
-                />
+            <ModalTabs
+              tabs={[
+                { id: 'produit', label: 'Produit' },
+                { id: 'suivi', label: 'Suivi' },
+              ]}
+              activeTab={activeTab}
+              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+            />
+
+            {activeTab === 'produit' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Marque</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.marque || ''}
+                    onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Modele</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    list={modeleListId}
+                    value={formData.modele || ''}
+                    onChange={(e) => handleModeleChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">S/N</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.numero_serie || ''}
+                    onChange={(e) => setFormData({ ...formData, numero_serie: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Gamme</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.gamme || ''}
+                    onChange={(e) => setFormData({ ...formData, gamme: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Pays</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    list={paysListId}
+                    value={formData.pays || ''}
+                    onChange={(e) => setFormData({ ...formData, pays: e.target.value })}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Modele</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.modele || ''}
-                  onChange={(e) => setFormData({ ...formData, modele: e.target.value })}
-                />
+            )}
+
+            {activeTab === 'suivi' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Date d'entree</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.date_entree || ''}
+                    onChange={(e) => setFormData({ ...formData, date_entree: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Statut</label>
+                  <select
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.statut}
+                    onChange={(e) => setFormData({ ...formData, statut: e.target.value as StockStatus })}
+                  >
+                    <option value="Disponible">Disponible</option>
+                    <option value="Reserve">Reserve</option>
+                    <option value="Vendu">Vendu</option>
+                    <option value="Transfert">Transfert</option>
+                    <option value="Obsolete">Obsolete</option>
+                  </select>
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Prix de revient HT</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    value={formData.prix_revient ?? ''}
+                    onChange={(e) => setFormData({ ...formData, prix_revient: Number(e.target.value) || null })}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">S/N</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.numero_serie || ''}
-                  onChange={(e) => setFormData({ ...formData, numero_serie: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Gamme</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.gamme || ''}
-                  onChange={(e) => setFormData({ ...formData, gamme: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Pays</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.pays || ''}
-                  onChange={(e) => setFormData({ ...formData, pays: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Date d'entree</label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.date_entree || ''}
-                  onChange={(e) => setFormData({ ...formData, date_entree: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Statut</label>
-                <select
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.statut}
-                  onChange={(e) => setFormData({ ...formData, statut: e.target.value as StockStatus })}
-                >
-                  <option value="Disponible">Disponible</option>
-                  <option value="Reserve">Reserve</option>
-                  <option value="Vendu">Vendu</option>
-                  <option value="Transfert">Transfert</option>
-                  <option value="Obsolete">Obsolete</option>
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Prix de revient HT</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                  value={formData.prix_revient ?? ''}
-                  onChange={(e) => setFormData({ ...formData, prix_revient: Number(e.target.value) || null })}
-                />
-              </div>
-            </div>
+            )}
+
+            <datalist id={modeleListId}>
+              {modeles.map((modele) => (
+                <option key={modele.id} value={modele.label} />
+              ))}
+            </datalist>
+            <datalist id={paysListId}>
+              {pays.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
 
             {submitError && (
               <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -418,3 +472,8 @@ export function StocksView() {
     </>
   );
 }
+
+
+
+
+

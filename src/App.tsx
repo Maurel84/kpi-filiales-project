@@ -24,10 +24,12 @@ import { AuthEventsView } from './components/Admin/AuthEventsView';
 import { DataExportsView } from './components/Admin/DataExportsView';
 import { Loader2 } from 'lucide-react';
 import type { Database } from './lib/database.types';
+import { supabase } from './lib/supabase';
 
 function AppContent() {
   const { user, loading, profile, profileLoading, signOut } = useAuth();
   const [currentView, setCurrentView] = useState('dashboard');
+  const [modulePermissions, setModulePermissions] = useState<Record<string, boolean> | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     if (typeof localStorage !== 'undefined') {
       return (localStorage.getItem('theme') as 'light' | 'dark') || 'light';
@@ -82,12 +84,36 @@ function AppContent() {
   };
 
   useEffect(() => {
+    if (!user || !profile || profile.role === 'admin_siege') {
+      setModulePermissions(null);
+      return;
+    }
+    const loadPermissions = async () => {
+      const { data } = await supabase
+        .from('user_module_permissions')
+        .select('module_id, enabled')
+        .eq('user_id', profile.id);
+      if (!data) {
+        setModulePermissions({});
+        return;
+      }
+      const map: Record<string, boolean> = {};
+      data.forEach((row) => {
+        map[row.module_id] = row.enabled;
+      });
+      setModulePermissions(map);
+    };
+    loadPermissions();
+  }, [profile, user]);
+
+  useEffect(() => {
     if (!user) return;
     const role = profile?.role;
-    if (!isViewAllowed(currentView, role)) {
+    const moduleDisabled = profile?.role !== 'admin_siege' && modulePermissions?.[currentView] === false;
+    if (!isViewAllowed(currentView, role) || moduleDisabled) {
       setCurrentView('dashboard');
     }
-  }, [currentView, profile?.role, user]);
+  }, [currentView, modulePermissions, profile?.role, user]);
 
   useEffect(() => {
     if (!user) return;
@@ -184,7 +210,13 @@ function AppContent() {
   };
 
   return (
-    <MainLayout currentView={currentView} onViewChange={setCurrentView} theme={theme} onToggleTheme={toggleTheme}>
+    <MainLayout
+      currentView={currentView}
+      onViewChange={setCurrentView}
+      theme={theme}
+      onToggleTheme={toggleTheme}
+      modulePermissions={modulePermissions}
+    >
       {renderView()}
     </MainLayout>
   );

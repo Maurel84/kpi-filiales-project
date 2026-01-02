@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { LogIn, Loader2, ShieldCheck, Building2 } from 'lucide-react';
+import { LogIn, Loader2, ShieldCheck, Building2, Truck, Wrench, Package, BarChart3 } from 'lucide-react';
 import logoUrl from '../../assets/tractafric-logo.svg';
 
 export function Login() {
@@ -25,53 +25,73 @@ export function Login() {
   };
 
   return (
-    <div className="relative min-h-screen bg-slate-950 text-white overflow-hidden">
+    <div className="relative min-h-screen overflow-hidden bg-slate-950 text-white">
       <div className="absolute inset-0 bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950" />
-      <div className="pointer-events-none absolute -left-32 top-0 h-[28rem] w-[28rem] rounded-full bg-amber-500/10 blur-3xl" />
-      <div className="pointer-events-none absolute right-[-10rem] bottom-[-8rem] h-[32rem] w-[32rem] rounded-full bg-yellow-400/10 blur-3xl" />
+      <div className="pointer-events-none absolute -left-24 top-10 h-80 w-80 rounded-full bg-amber-500/15 blur-3xl" />
+      <div className="pointer-events-none absolute right-[-10rem] bottom-[-10rem] h-[34rem] w-[34rem] rounded-full bg-yellow-400/10 blur-3xl" />
 
       <div className="relative max-w-6xl mx-auto px-4 py-12">
-        <div className="grid md:grid-cols-2 gap-10 items-center">
-          <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900/90 via-slate-900/80 to-amber-950/70 text-white p-8 shadow-2xl backdrop-blur-xl">
-            <div className="flex items-center gap-3 mb-6">
+        <div className="grid lg:grid-cols-[1.1fr_0.9fr] gap-10 items-center">
+          <div className="space-y-6">
+            <div className="flex items-center gap-3">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/90 shadow-lg">
                 <img src={logoUrl} alt="Tractafric Equipment" className="h-7 w-auto" />
               </div>
               <div>
-                <p className="pill bg-white/10 text-amber-100 border border-white/10">Nouveau Design</p>
-                <h1 className="text-3xl font-bold mt-2 leading-tight">Application Multi-Filiales</h1>
+                <p className="pill bg-white/10 text-amber-100 border border-white/10">Plateforme Groupe</p>
+                <h1 className="text-3xl font-bold mt-2 leading-tight">Performance ventes & parc machines</h1>
               </div>
             </div>
+
             <p className="text-slate-100/90 leading-relaxed">
-              Pilotage unifié des filiales, KPIs, stocks et ventes dans une expérience premium.
-              Authentifiez-vous pour retrouver vos tableaux de bord en temps réel.
+              Un pilotage unifie pour les activites Manutention, Agriculture, Motors et Equipement.
+              Suivez les ventes, stocks, SAV et parts de marche en temps reel.
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-8">
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-start gap-3 backdrop-blur">
-                <ShieldCheck className="h-5 w-5 text-amber-300 mt-1" />
-                <div>
-                  <p className="font-semibold text-white">Sécurisé</p>
-                  <p className="text-sm text-slate-100/80">Connexion chiffrée et profils valides.</p>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              {[
+                { icon: Truck, title: 'Manutention', desc: 'Stocks, ventes, disponibilite parc client.' },
+                { icon: Package, title: 'Agriculture', desc: 'Commandes, previsions et campagnes saisonnieres.' },
+                { icon: Wrench, title: 'Service & SAV', desc: 'Contrats, garanties, inspections techniques.' },
+                { icon: BarChart3, title: 'Motors & Equipement', desc: 'KPIs, PDM et reporting multi-filiales.' },
+              ].map(({ icon: Icon, title, desc }) => (
+                <div
+                  key={title}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-start gap-3 backdrop-blur"
+                >
+                  <div className="h-10 w-10 rounded-xl bg-amber-500/20 flex items-center justify-center">
+                    <Icon className="h-5 w-5 text-amber-200" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-white">{title}</p>
+                    <p className="text-sm text-slate-100/80">{desc}</p>
+                  </div>
                 </div>
+              ))}
+            </div>
+
+            <div className="flex items-center gap-4 text-sm text-slate-200/80">
+              <div className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1">
+                <ShieldCheck className="w-4 h-4 text-amber-200" />
+                Securise
               </div>
-              <div className="rounded-xl border border-white/10 bg-white/5 p-4 flex items-start gap-3 backdrop-blur">
-                <Building2 className="h-5 w-5 text-yellow-300 mt-1" />
-                <div>
-                  <p className="font-semibold text-white">Filiales en direct</p>
-                  <p className="text-sm text-slate-100/80">Vue croisée siège et filiales.</p>
-                </div>
+              <div className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1">
+                <Building2 className="w-4 h-4 text-amber-200" />
+                Multi-filiales
               </div>
             </div>
           </div>
 
-          <div className="bg-white rounded-2xl shadow-2xl p-8 relative overflow-hidden">
+          <div className="bg-white rounded-3xl shadow-2xl p-8 relative overflow-hidden text-slate-900">
             <div className="absolute inset-x-0 -top-16 h-32 bg-gradient-to-b from-amber-50 to-transparent pointer-events-none" />
             <div className="relative space-y-6">
               <div className="flex items-start justify-between">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Accès sécurisé</p>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Acces securise</p>
                   <h2 className="text-2xl font-bold text-slate-900">Connexion</h2>
-                  <p className="text-sm text-slate-500 mt-1">Reprenez vos opérations en quelques secondes.</p>
+                  <p className="text-sm text-slate-500 mt-1">
+                    Accedez aux modules et tableaux de bord du Groupe.
+                  </p>
                 </div>
                 <div className="pill bg-amber-50 text-amber-700 border border-amber-100">
                   <LogIn className="w-4 h-4" />
@@ -97,7 +117,7 @@ export function Login() {
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       className="w-full bg-transparent px-4 py-3 text-slate-900 outline-none placeholder:text-slate-400"
-                      placeholder="votre.email@entreprise.com"
+                      placeholder="prenom.nom@tractafric.com"
                       required
                     />
                   </div>
@@ -140,7 +160,7 @@ export function Login() {
               </form>
 
               <div className="pt-2 border-t border-slate-100 text-sm text-slate-500">
-                <p>Support 24/7 et monitoring des rôles siège et filiales.</p>
+                <p>Support operations & direction, avec suivi temps reel des KPI.</p>
               </div>
             </div>
           </div>

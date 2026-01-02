@@ -1,23 +1,32 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFilialeContext } from '../../contexts/FilialeContext';
 import { supabase } from '../../lib/supabase';
 import { ShoppingCart, Filter, Calendar, TrendingUp, X } from 'lucide-react';
 import type { Database } from '../../lib/database.types';
+import { ModalTabs } from '../ui/ModalTabs';
+import { useListeReference } from '../../hooks/useListeReference';
 
 type CommandeClient = Database['public']['Tables']['commandes_clients']['Row'];
 type CommandeInsert = Database['public']['Tables']['commandes_clients']['Insert'];
 
-type CommandeForm = Omit<CommandeInsert, 'filiale_id' | 'created_by'> & {
+type CommandeForm = Omit<CommandeInsert, 'filiale_id' | 'created_by_id'> & {
   filiale_id: string | null;
-  created_by: string | null;
+  created_by_id: string | null;
 };
 
 export function CommandesClientsView() {
   const { profile } = useAuth();
+  const { filialeId, isAdmin } = useFilialeContext();
+  const { modeles, modeleLookup, pays, vendeurs } = useListeReference();
+  const modeleListId = 'commandes-clients-modeles';
+  const paysListId = 'commandes-clients-pays';
+  const vendeursListId = 'commandes-clients-vendeurs';
   const [commandes, setCommandes] = useState<CommandeClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<'client' | 'produit' | 'finances'>('client');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState<CommandeForm>({
@@ -33,7 +42,7 @@ export function CommandesClientsView() {
     vendeur: '',
     ca_ht: 0,
     prevision_facturation: '',
-    created_by: null,
+    created_by_id: null,
   });
 
   const loadCommandes = useCallback(async () => {
@@ -44,8 +53,8 @@ export function CommandesClientsView() {
       .select('id, filiale_id, numero_commande, date_commande, client_nom, marque, modele, numero_serie, gamme, pays, vendeur, ca_ht, prevision_facturation')
       .order('date_commande', { ascending: false });
 
-    if (profile.role !== 'admin_siege' && profile.filiale_id) {
-      query = query.eq('filiale_id', profile.filiale_id);
+    if (filialeId) {
+      query = query.eq('filiale_id', filialeId);
     }
 
     const { data, error } = await query;
@@ -54,7 +63,7 @@ export function CommandesClientsView() {
     }
 
     setLoading(false);
-  }, [profile]);
+  }, [filialeId, profile]);
 
   useEffect(() => {
     loadCommandes();
@@ -64,13 +73,39 @@ export function CommandesClientsView() {
     if (!profile) return;
     setFormData((prev) => ({
       ...prev,
-      filiale_id: profile.filiale_id || null,
-      created_by: profile.id,
+      filiale_id: filialeId || null,
+      created_by_id: profile.id,
     }));
-  }, [profile]);
+  }, [filialeId, profile]);
+
+  useEffect(() => {
+    if (isModalOpen) {
+      setActiveTab('client');
+    }
+  }, [isModalOpen]);
+
+  const handleModeleChange = (value: string) => {
+    const trimmed = value.trim();
+    const match = trimmed ? modeleLookup.get(trimmed.toLowerCase()) : undefined;
+    setFormData((prev) => ({
+      ...prev,
+      modele: value,
+      marque: match?.marque ?? prev.marque,
+      gamme: match?.gamme ?? prev.gamme,
+    }));
+  };
 
   const submitCommande = async () => {
     if (!profile) return;
+    if (!filialeId) {
+      setSubmitError(
+        isAdmin
+          ? 'Selectionnez une filiale active pour creer une commande.'
+          : 'Associez une filiale pour creer une commande.'
+      );
+      return;
+    }
+
     if (!formData.numero_commande || !formData.client_nom) {
       setSubmitError('Numero et client sont requis.');
       return;
@@ -90,8 +125,8 @@ export function CommandesClientsView() {
       vendeur: formData.vendeur || null,
       ca_ht: Number(formData.ca_ht) || 0,
       prevision_facturation: formData.prevision_facturation || null,
-      filiale_id: profile.filiale_id,
-      created_by: profile.id,
+      filiale_id: filialeId,
+      created_by_id: profile.id,
     };
 
     const { error } = await supabase.from('commandes_clients').insert(payload);
@@ -115,8 +150,8 @@ export function CommandesClientsView() {
       vendeur: '',
       ca_ht: 0,
       prevision_facturation: '',
-      filiale_id: profile.filiale_id || null,
-      created_by: profile.id,
+      filiale_id: filialeId || null,
+      created_by_id: profile.id,
     });
     loadCommandes();
   };
@@ -264,8 +299,8 @@ export function CommandesClientsView() {
       </div>
 
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl p-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-2 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 relative">
             <button
               onClick={() => setIsModalOpen(false)}
               className="absolute right-4 top-4 text-slate-500 hover:text-slate-800"
@@ -274,99 +309,140 @@ export function CommandesClientsView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Nouvelle commande client</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">N? commande</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.numero_commande}
-                  onChange={(e) => setFormData({ ...formData, numero_commande: e.target.value })}
-                />
+            <ModalTabs
+              tabs={[
+                { id: 'client', label: 'Client' },
+                { id: 'produit', label: 'Produit' },
+                { id: 'finances', label: 'Finances' },
+              ]}
+              activeTab={activeTab}
+              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+            />
+
+            {activeTab === 'client' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">N? commande</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.numero_commande}
+                    onChange={(e) => setFormData({ ...formData, numero_commande: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Date</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.date_commande}
+                    onChange={(e) => setFormData({ ...formData, date_commande: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Client</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.client_nom}
+                    onChange={(e) => setFormData({ ...formData, client_nom: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Vendeur</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    list={vendeursListId}
+                    value={formData.vendeur || ''}
+                    onChange={(e) => setFormData({ ...formData, vendeur: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Pays</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    list={paysListId}
+                    value={formData.pays || ''}
+                    onChange={(e) => setFormData({ ...formData, pays: e.target.value })}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Date</label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.date_commande}
-                  onChange={(e) => setFormData({ ...formData, date_commande: e.target.value })}
-                />
+            )}
+
+            {activeTab === 'produit' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Marque</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.marque || ''}
+                    onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Modele</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    list={modeleListId}
+                    value={formData.modele || ''}
+                    onChange={(e) => handleModeleChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">S/N</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.numero_serie || ''}
+                    onChange={(e) => setFormData({ ...formData, numero_serie: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Gamme</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.gamme || ''}
+                    onChange={(e) => setFormData({ ...formData, gamme: e.target.value })}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Client</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.client_nom}
-                  onChange={(e) => setFormData({ ...formData, client_nom: e.target.value })}
-                />
+            )}
+
+            {activeTab === 'finances' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">CA HT</label>
+                  <input
+                    type="number"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.ca_ht ?? 0}
+                    onChange={(e) => setFormData({ ...formData, ca_ht: Number(e.target.value) })}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Prevision de facturation</label>
+                  <input
+                    type="date"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.prevision_facturation ?? ''}
+                    onChange={(e) => setFormData({ ...formData, prevision_facturation: e.target.value })}
+                  />
+                </div>
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Marque</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.marque || ''}
-                  onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Modele</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.modele || ''}
-                  onChange={(e) => setFormData({ ...formData, modele: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">S/N</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.numero_serie || ''}
-                  onChange={(e) => setFormData({ ...formData, numero_serie: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Gamme</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.gamme || ''}
-                  onChange={(e) => setFormData({ ...formData, gamme: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Pays</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.pays || ''}
-                  onChange={(e) => setFormData({ ...formData, pays: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Vendeur</label>
-                <input
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.vendeur || ''}
-                  onChange={(e) => setFormData({ ...formData, vendeur: e.target.value })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">CA HT</label>
-                <input
-                  type="number"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.ca_ht ?? 0}
-                  onChange={(e) => setFormData({ ...formData, ca_ht: Number(e.target.value) })}
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-slate-700">Prevision de facturation</label>
-                <input
-                  type="date"
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
-                  value={formData.prevision_facturation ?? ''}
-                  onChange={(e) => setFormData({ ...formData, prevision_facturation: e.target.value })}
-                />
-              </div>
-            </div>
+            )}
+
+            <datalist id={modeleListId}>
+              {modeles.map((modele) => (
+                <option key={modele.id} value={modele.label} />
+              ))}
+            </datalist>
+            <datalist id={paysListId}>
+              {pays.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
+            <datalist id={vendeursListId}>
+              {vendeurs.map((item) => (
+                <option key={item} value={item} />
+              ))}
+            </datalist>
 
             {submitError && (
               <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
@@ -396,3 +472,8 @@ export function CommandesClientsView() {
     </div>
   );
 }
+
+
+
+
+

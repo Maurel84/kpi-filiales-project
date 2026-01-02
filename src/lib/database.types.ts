@@ -89,6 +89,11 @@ export type Tables = {
           event: 'signed_in' | 'signed_out'
           user_agent: string | null
           ip_address: string | null
+          time_zone: string | null
+          locale: string | null
+          geo_lat: number | null
+          geo_lon: number | null
+          geo_accuracy: number | null
           created_at: string
         }
         Insert: {
@@ -97,6 +102,11 @@ export type Tables = {
           event: 'signed_in' | 'signed_out'
           user_agent?: string | null
           ip_address?: string | null
+          time_zone?: string | null
+          locale?: string | null
+          geo_lat?: number | null
+          geo_lon?: number | null
+          geo_accuracy?: number | null
           created_at?: string
         }
         Update: {
@@ -105,6 +115,11 @@ export type Tables = {
           event?: 'signed_in' | 'signed_out'
           user_agent?: string | null
           ip_address?: string | null
+          time_zone?: string | null
+          locale?: string | null
+          geo_lat?: number | null
+          geo_lon?: number | null
+          geo_accuracy?: number | null
           created_at?: string
         }
       }
@@ -334,6 +349,116 @@ export type Tables = {
           created_at?: string
         }
       }
+      liste_reference: {
+        Row: {
+          id: string
+          marque: string | null
+          modele: string | null
+          gamme: string | null
+          pays: string | null
+          vendeur: string | null
+          src: string | null
+          statut: string | null
+          niveau_priorite: string | null
+          statut_logistique: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          marque?: string | null
+          modele?: string | null
+          gamme?: string | null
+          pays?: string | null
+          vendeur?: string | null
+          src?: string | null
+          statut?: string | null
+          niveau_priorite?: string | null
+          statut_logistique?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          marque?: string | null
+          modele?: string | null
+          gamme?: string | null
+          pays?: string | null
+          vendeur?: string | null
+          src?: string | null
+          statut?: string | null
+          niveau_priorite?: string | null
+          statut_logistique?: string | null
+          created_at?: string
+        }
+      }
+      pays_reference: {
+        Row: {
+          id: string
+          code: string
+          nom: string
+          actif: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          code: string
+          nom: string
+          actif?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          code?: string
+          nom?: string
+          actif?: boolean
+          created_at?: string
+        }
+      }
+      vendeurs_reference: {
+        Row: {
+          id: string
+          code: string
+          nom: string
+          actif: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          code: string
+          nom: string
+          actif?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          code?: string
+          nom?: string
+          actif?: boolean
+          created_at?: string
+        }
+      }
+      user_module_permissions: {
+        Row: {
+          id: string
+          user_id: string
+          module_id: string
+          enabled: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          module_id: string
+          enabled?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          module_id?: string
+          enabled?: boolean
+          created_at?: string
+        }
+      }
       pdm_entries: {
         Row: {
           id: string
@@ -507,93 +632,84 @@ export type Tables = {
       stock_items: {
         Row: {
           id: string
-          article_id: string
           filiale_id: string
           numero_serie: string | null
-          quantite: number
-          emplacement: string | null
           date_entree: string
-          prix_achat_ht: number | null
           prix_revient: number | null
           gamme: string | null
           pays: string | null
           statut: 'Disponible' | 'Reserve' | 'Vendu' | 'Transfert' | 'Obsolete'
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          article_id: string
-          filiale_id: string
-          numero_serie?: string | null
-          quantite?: number
-          emplacement?: string | null
-          date_entree?: string
-          prix_achat_ht?: number | null
-          prix_revient?: number | null
-          gamme?: string | null
-          pays?: string | null
-          statut?: 'Disponible' | 'Reserve' | 'Vendu' | 'Transfert' | 'Obsolete'
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          article_id?: string
-          filiale_id?: string
-          numero_serie?: string | null
-          quantite?: number
-          emplacement?: string | null
-          date_entree?: string
-          prix_achat_ht?: number | null
-          prix_revient?: number | null
-          gamme?: string | null
-          pays?: string | null
-          statut?: 'Disponible' | 'Reserve' | 'Vendu' | 'Transfert' | 'Obsolete'
-          created_at?: string
-          updated_at?: string
-        }
-      }
-      commandes_fournisseurs: {
-        Row: {
-          id: string
-          numero: string
-          fournisseur: string
-          filiale_id: string
-          date_commande: string
-          date_livraison_prevue: string | null
-          statut: 'En_cours' | 'Livree' | 'Partiellement_livree' | 'Annulee'
-          montant_total: number
-          devise: string
-          commentaires: string | null
+          marque: string | null
+          modele: string | null
           created_by: string | null
           created_at: string
         }
         Insert: {
           id?: string
-          numero: string
-          fournisseur: string
           filiale_id: string
-          date_commande?: string
-          date_livraison_prevue?: string | null
-          statut?: 'En_cours' | 'Livree' | 'Partiellement_livree' | 'Annulee'
-          montant_total?: number
-          devise?: string
-          commentaires?: string | null
+          numero_serie?: string | null
+          date_entree?: string
+          prix_revient?: number | null
+          gamme?: string | null
+          pays?: string | null
+          statut?: 'Disponible' | 'Reserve' | 'Vendu' | 'Transfert' | 'Obsolete'
+          marque?: string | null
+          modele?: string | null
           created_by?: string | null
           created_at?: string
         }
         Update: {
           id?: string
-          numero?: string
-          fournisseur?: string
           filiale_id?: string
+          numero_serie?: string | null
+          date_entree?: string
+          prix_revient?: number | null
+          gamme?: string | null
+          pays?: string | null
+          statut?: 'Disponible' | 'Reserve' | 'Vendu' | 'Transfert' | 'Obsolete'
+          marque?: string | null
+          modele?: string | null
+          created_by?: string | null
+          created_at?: string
+        }
+      }
+      commandes_fournisseurs: {
+        Row: {
+          id: string
+          filiale_id: string
+          numero_commande: string
+          date_commande: string
+          eta: string | null
+          marque: string | null
+          modele: string | null
+          gamme: string | null
+          prix_achat_ht: number | null
+          created_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          filiale_id: string
+          numero_commande: string
           date_commande?: string
-          date_livraison_prevue?: string | null
-          statut?: 'En_cours' | 'Livree' | 'Partiellement_livree' | 'Annulee'
-          montant_total?: number
-          devise?: string
-          commentaires?: string | null
+          eta?: string | null
+          marque?: string | null
+          modele?: string | null
+          gamme?: string | null
+          prix_achat_ht?: number | null
+          created_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          filiale_id?: string
+          numero_commande?: string
+          date_commande?: string
+          eta?: string | null
+          marque?: string | null
+          modele?: string | null
+          gamme?: string | null
+          prix_achat_ht?: number | null
           created_by?: string | null
           created_at?: string
         }
@@ -752,17 +868,14 @@ export type Tables = {
           numero_commande: string
           date_commande: string
           client_nom: string
-          marque_id: string | null
+          marque: string | null
           modele: string | null
           numero_serie: string | null
           gamme: string | null
           pays: string | null
-          vendeur_id: string | null
-          ca_ht_prevu: number | null
-          devise: string
+          vendeur: string | null
+          ca_ht: number | null
           prevision_facturation: string | null
-          statut: 'En_cours' | 'Facture' | 'Annule' | 'Livre'
-          commentaires: string | null
           created_by_id: string | null
           created_at: string
           updated_at: string
@@ -773,17 +886,14 @@ export type Tables = {
           numero_commande: string
           date_commande?: string
           client_nom: string
-          marque_id?: string | null
+          marque?: string | null
           modele?: string | null
           numero_serie?: string | null
           gamme?: string | null
           pays?: string | null
-          vendeur_id?: string | null
-          ca_ht_prevu?: number | null
-          devise?: string
+          vendeur?: string | null
+          ca_ht?: number | null
           prevision_facturation?: string | null
-          statut?: 'En_cours' | 'Facture' | 'Annule' | 'Livre'
-          commentaires?: string | null
           created_by_id?: string | null
           created_at?: string
           updated_at?: string
@@ -794,17 +904,14 @@ export type Tables = {
           numero_commande?: string
           date_commande?: string
           client_nom?: string
-          marque_id?: string | null
+          marque?: string | null
           modele?: string | null
           numero_serie?: string | null
           gamme?: string | null
           pays?: string | null
-          vendeur_id?: string | null
-          ca_ht_prevu?: number | null
-          devise?: string
+          vendeur?: string | null
+          ca_ht?: number | null
           prevision_facturation?: string | null
-          statut?: 'En_cours' | 'Facture' | 'Annule' | 'Livre'
-          commentaires?: string | null
           created_by_id?: string | null
           created_at?: string
           updated_at?: string
@@ -822,10 +929,8 @@ export type Tables = {
           whatsapp_client: string | null
           email_client: string | null
           url_societe_client: string | null
-          notes: string | null
-          visite_par_id: string | null
+          created_by: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
@@ -838,10 +943,8 @@ export type Tables = {
           whatsapp_client?: string | null
           email_client?: string | null
           url_societe_client?: string | null
-          notes?: string | null
-          visite_par_id?: string | null
+          created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
@@ -854,72 +957,58 @@ export type Tables = {
           whatsapp_client?: string | null
           email_client?: string | null
           url_societe_client?: string | null
-          notes?: string | null
-          visite_par_id?: string | null
+          created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
       }
       opportunites: {
         Row: {
           id: string
           filiale_id: string | null
-          visite_id: string | null
           nom_projet: string
           ville: string | null
           marques: string[] | null
           modeles: string[] | null
           quantites: number | null
           ca_ht_potentiel: number | null
-          devise: string | null
           pourcentage_marge: number | null
           date_closing_prevue: string | null
           statut: 'Gagne' | 'En_cours' | 'Reporte' | 'Abandonne' | 'Perdu'
           taux_cloture_percent: number | null
-          notes: string | null
-          created_by_id: string | null
+          created_by: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
           filiale_id?: string | null
-          visite_id?: string | null
           nom_projet: string
           ville?: string | null
           marques?: string[] | null
           modeles?: string[] | null
           quantites?: number | null
           ca_ht_potentiel?: number | null
-          devise?: string | null
           pourcentage_marge?: number | null
           date_closing_prevue?: string | null
           statut?: 'Gagne' | 'En_cours' | 'Reporte' | 'Abandonne' | 'Perdu'
           taux_cloture_percent?: number | null
-          notes?: string | null
-          created_by_id?: string | null
+          created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
           filiale_id?: string | null
-          visite_id?: string | null
           nom_projet?: string
           ville?: string | null
           marques?: string[] | null
           modeles?: string[] | null
           quantites?: number | null
           ca_ht_potentiel?: number | null
-          devise?: string | null
           pourcentage_marge?: number | null
           date_closing_prevue?: string | null
           statut?: 'Gagne' | 'En_cours' | 'Reporte' | 'Abandonne' | 'Perdu'
           taux_cloture_percent?: number | null
-          notes?: string | null
-          created_by_id?: string | null
+          created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
       }
       powerbi_configs: {
@@ -951,76 +1040,49 @@ export type Tables = {
       ventes: {
         Row: {
           id: string
-          numero: string
           filiale_id: string
-          article_id: string
-          stock_item_id: string | null
           client_nom: string
-          client_pays: string | null
+          pays: string | null
           gamme: string | null
           src: string | null
           numero_serie: string | null
-          quantite: number
-          prix_vente_ht: number
-          prix_revient: number | null
-          marge: number | null
-          taux_marge: number | null
+          ca_ht: number
           date_vente: string
-          mois_vente: string | null
-          annee: number | null
-          commercial_id: string | null
-          statut: 'Devis' | 'Commande' | 'Facturee' | 'Annulee'
-          commentaires: string | null
+          marque: string | null
+          modele: string | null
+          vendeur: string | null
           created_by: string | null
           created_at: string
         }
         Insert: {
           id?: string
-          numero: string
           filiale_id: string
-          article_id: string
-          stock_item_id?: string | null
           client_nom: string
-          client_pays?: string | null
+          pays?: string | null
           gamme?: string | null
           src?: string | null
           numero_serie?: string | null
-          quantite: number
-          prix_vente_ht: number
-          prix_revient?: number | null
-          marge?: number | null
-          taux_marge?: number | null
+          ca_ht: number
           date_vente?: string
-          mois_vente?: string | null
-          annee?: number | null
-          commercial_id?: string | null
-          statut?: 'Devis' | 'Commande' | 'Facturee' | 'Annulee'
-          commentaires?: string | null
+          marque?: string | null
+          modele?: string | null
+          vendeur?: string | null
           created_by?: string | null
           created_at?: string
         }
         Update: {
           id?: string
-          numero?: string
           filiale_id?: string
-          article_id?: string
-          stock_item_id?: string | null
           client_nom?: string
-          client_pays?: string | null
+          pays?: string | null
           gamme?: string | null
           src?: string | null
           numero_serie?: string | null
-          quantite?: number
-          prix_vente_ht?: number
-          prix_revient?: number | null
-          marge?: number | null
-          taux_marge?: number | null
+          ca_ht?: number
           date_vente?: string
-          mois_vente?: string | null
-          annee?: number | null
-          commercial_id?: string | null
-          statut?: 'Devis' | 'Commande' | 'Facturee' | 'Annulee'
-          commentaires?: string | null
+          marque?: string | null
+          modele?: string | null
+          vendeur?: string | null
           created_by?: string | null
           created_at?: string
         }
@@ -1029,22 +1091,10 @@ export type Tables = {
         Row: {
           id: string
           filiale_id: string
-          article_id: string | null
-          categorie_produit: string | null
-          client_potentiel: string
-          pays: string | null
-          montant_estime: number | null
-          date_opportunite: string
-          mois_perte: string | null
-          annee: number | null
-          motif_perte: 'Prix' | 'Delai' | 'Concurrent' | 'Produit_inadequat' | 'Budget_client' | 'Autre' | null
-          concurrent: string | null
           a_participe: boolean | null
           marque_concurrent: string | null
           modele_concurrent: string | null
           prix_concurrent: number | null
-          commentaires_analyse: string | null
-          commercial_id: string | null
           commentaires: string | null
           created_by: string | null
           created_at: string
@@ -1052,22 +1102,10 @@ export type Tables = {
         Insert: {
           id?: string
           filiale_id: string
-          article_id?: string | null
-          categorie_produit?: string | null
-          client_potentiel: string
-          pays?: string | null
-          montant_estime?: number | null
-          date_opportunite?: string
-          mois_perte?: string | null
-          annee?: number | null
-          motif_perte?: 'Prix' | 'Delai' | 'Concurrent' | 'Produit_inadequat' | 'Budget_client' | 'Autre' | null
-          concurrent?: string | null
           a_participe?: boolean | null
           marque_concurrent?: string | null
           modele_concurrent?: string | null
           prix_concurrent?: number | null
-          commentaires_analyse?: string | null
-          commercial_id?: string | null
           commentaires?: string | null
           created_by?: string | null
           created_at?: string
@@ -1075,22 +1113,10 @@ export type Tables = {
         Update: {
           id?: string
           filiale_id?: string
-          article_id?: string | null
-          categorie_produit?: string | null
-          client_potentiel?: string
-          pays?: string | null
-          montant_estime?: number | null
-          date_opportunite?: string
-          mois_perte?: string | null
-          annee?: number | null
-          motif_perte?: 'Prix' | 'Delai' | 'Concurrent' | 'Produit_inadequat' | 'Budget_client' | 'Autre' | null
-          concurrent?: string | null
           a_participe?: boolean | null
           marque_concurrent?: string | null
           modele_concurrent?: string | null
           prix_concurrent?: number | null
-          commentaires_analyse?: string | null
-          commercial_id?: string | null
           commentaires?: string | null
           created_by?: string | null
           created_at?: string
@@ -1216,49 +1242,76 @@ export type Tables = {
           id: string
           filiale_id: string
           annee: number
-          mois: string | null
-          type_budget: 'Ventes_machines' | 'Ventes_pieces' | 'Ventes_services' | 'Charges' | 'Investissements'
-          montant: number
-          devise: string
-          commentaires: string | null
+          budget_jan: number | null
+          budget_fev: number | null
+          budget_mar: number | null
+          budget_avr: number | null
+          budget_mai: number | null
+          budget_jui: number | null
+          budget_juil: number | null
+          budget_aou: number | null
+          budget_sep: number | null
+          budget_oct: number | null
+          budget_nov: number | null
+          budget_dec: number | null
+          cumul_fin_dec: number | null
+          plan_n1: number | null
+          plan_n2: number | null
           produit: string | null
           plan_compte: string | null
           constructeur: string | null
           created_by: string | null
           created_at: string
-          updated_at: string
         }
         Insert: {
           id?: string
           filiale_id: string
           annee: number
-          mois?: string | null
-          type_budget: 'Ventes_machines' | 'Ventes_pieces' | 'Ventes_services' | 'Charges' | 'Investissements'
-          montant: number
-          devise?: string
-          commentaires?: string | null
+          budget_jan?: number | null
+          budget_fev?: number | null
+          budget_mar?: number | null
+          budget_avr?: number | null
+          budget_mai?: number | null
+          budget_jui?: number | null
+          budget_juil?: number | null
+          budget_aou?: number | null
+          budget_sep?: number | null
+          budget_oct?: number | null
+          budget_nov?: number | null
+          budget_dec?: number | null
+          cumul_fin_dec?: number | null
+          plan_n1?: number | null
+          plan_n2?: number | null
           produit?: string | null
           plan_compte?: string | null
           constructeur?: string | null
           created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
         Update: {
           id?: string
           filiale_id?: string
           annee?: number
-          mois?: string | null
-          type_budget?: 'Ventes_machines' | 'Ventes_pieces' | 'Ventes_services' | 'Charges' | 'Investissements'
-          montant?: number
-          devise?: string
-          commentaires?: string | null
+          budget_jan?: number | null
+          budget_fev?: number | null
+          budget_mar?: number | null
+          budget_avr?: number | null
+          budget_mai?: number | null
+          budget_jui?: number | null
+          budget_juil?: number | null
+          budget_aou?: number | null
+          budget_sep?: number | null
+          budget_oct?: number | null
+          budget_nov?: number | null
+          budget_dec?: number | null
+          cumul_fin_dec?: number | null
+          plan_n1?: number | null
+          plan_n2?: number | null
           produit?: string | null
           plan_compte?: string | null
           constructeur?: string | null
           created_by?: string | null
           created_at?: string
-          updated_at?: string
         }
       }
       forecasts: {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFilialeContext } from '../../contexts/FilialeContext';
 import type { Database } from '../../lib/database.types';
 
 type AuthEvent = Database['public']['Tables']['auth_events']['Row'];
@@ -16,6 +17,7 @@ const EXPORT_PAGE_SIZE = 500;
 
 export function AuthEventsView() {
   const { profile } = useAuth();
+  const { filialeId: activeFilialeId } = useFilialeContext();
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [filiales, setFiliales] = useState<Filiale[]>([]);
   const [authEvents, setAuthEvents] = useState<AuthEvent[]>([]);
@@ -48,7 +50,9 @@ export function AuthEventsView() {
     }, {});
   }, [filiales]);
 
-  const effectiveFilialeId = isAdmin ? selectedFilialeId : profile?.filiale_id || '';
+  const effectiveFilialeId = isAdmin
+    ? selectedFilialeId || activeFilialeId || ''
+    : profile?.filiale_id || '';
 
   const availableUsers = useMemo(() => {
     if (!effectiveFilialeId) return users;
@@ -79,6 +83,19 @@ export function AuthEventsView() {
 
   const formatEventDate = (value: string) => {
     return new Date(value).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
+  };
+
+  const formatLocation = (event: AuthEvent) => {
+    const parts: string[] = [];
+    if (event.time_zone) parts.push(event.time_zone);
+    if (event.locale) parts.push(event.locale);
+    if (typeof event.geo_lat === 'number' && typeof event.geo_lon === 'number') {
+      parts.push(`${event.geo_lat.toFixed(2)}, ${event.geo_lon.toFixed(2)}`);
+      if (typeof event.geo_accuracy === 'number') {
+        parts.push(`~${Math.round(event.geo_accuracy)}m`);
+      }
+    }
+    return parts.length > 0 ? parts.join(' | ') : 'N/A';
   };
 
   const formatAuthEventsError = (message: string) => {
@@ -171,6 +188,9 @@ export function AuthEventsView() {
       if (!isAdmin && profile?.filiale_id) {
         setSelectedFilialeId(profile.filiale_id);
       }
+      if (isAdmin && activeFilialeId && !selectedFilialeId) {
+        setSelectedFilialeId(activeFilialeId);
+      }
 
       const ok = await loadPage(0, false);
       if (!ok) {
@@ -180,7 +200,7 @@ export function AuthEventsView() {
       setLoading(false);
     };
     load();
-  }, [canViewLogs, isAdmin, profile?.filiale_id]);
+  }, [activeFilialeId, canViewLogs, isAdmin, profile?.filiale_id, selectedFilialeId]);
 
   useEffect(() => {
     if (!canViewLogs) return;
@@ -243,7 +263,19 @@ export function AuthEventsView() {
     setExporting('csv');
     try {
       const rows = await fetchAllForExport();
-      const headers = ['utilisateur', 'action', 'date', 'user_id', 'ip_address', 'user_agent'];
+      const headers = [
+        'utilisateur',
+        'action',
+        'date',
+        'user_id',
+        'ip_address',
+        'time_zone',
+        'locale',
+        'geo_lat',
+        'geo_lon',
+        'geo_accuracy',
+        'user_agent',
+      ];
       const lines = [
         headers.join(','),
         ...rows.map((row) => {
@@ -253,9 +285,14 @@ export function AuthEventsView() {
             row.created_at,
             row.user_id,
             row.ip_address || '',
+            row.time_zone || '',
+            row.locale || '',
+            row.geo_lat ?? '',
+            row.geo_lon ?? '',
+            row.geo_accuracy ?? '',
             row.user_agent || '',
           ];
-          return values.map((value) => `"${String(value).replace(/\"/g, '""')}"`).join(',');
+          return values.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(',');
         }),
       ];
       const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
@@ -293,6 +330,7 @@ export function AuthEventsView() {
             <td>${formatEventLabel(row.event)}</td>
             <td>${formatEventDate(row.created_at)}</td>
             <td>${row.ip_address || '-'}</td>
+            <td>${formatLocation(row)}</td>
             <td>${row.user_agent || '-'}</td>
           </tr>
         `
@@ -322,11 +360,12 @@ export function AuthEventsView() {
                   <th>Action</th>
                   <th>Date</th>
                   <th>IP</th>
+                  <th>Lieu</th>
                   <th>Appareil</th>
                 </tr>
               </thead>
               <tbody>
-                ${rowsHtml || '<tr><td colspan="5">Aucune donnee</td></tr>'}
+                ${rowsHtml || '<tr><td colspan="6">Aucune donnee</td></tr>'}
               </tbody>
             </table>
           </body>
@@ -482,6 +521,7 @@ export function AuthEventsView() {
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Utilisateur</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Action</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Date</th>
+                  <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Lieu</th>
                   <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Appareil</th>
                 </tr>
               </thead>
@@ -499,6 +539,7 @@ export function AuthEventsView() {
                     <td className="py-3 px-4 text-sm text-slate-700">
                       {formatEventDate(event.created_at)}
                     </td>
+                    <td className="py-3 px-4 text-sm text-slate-600">{formatLocation(event)}</td>
                     <td className="py-3 px-4 text-sm text-slate-600">
                       {event.user_agent ? event.user_agent.slice(0, 80) : 'N/A'}
                     </td>
@@ -506,7 +547,7 @@ export function AuthEventsView() {
                 ))}
                 {uniqueAuthEvents.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="py-6 text-center text-sm text-slate-500">
+                    <td colSpan={5} className="py-6 text-center text-sm text-slate-500">
                       Aucun historique de connexion pour le moment.
                     </td>
                   </tr>

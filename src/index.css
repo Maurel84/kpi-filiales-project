@@ -7,11 +7,14 @@
 @layer base {
   :root {
     color-scheme: light;
-    --tae-yellow: #feb910;
-    --tae-yellow-strong: #f59e0b;
+    --tae-gold: #f5b301;
+    --tae-amber: #ffcc48;
+    --tae-copper: #d07a00;
     --tae-black: #0b0b0b;
     --tae-sand: #fff7e1;
     --tae-graphite: #1f2937;
+    --tae-ink: #111827;
+    --tae-forest: #0c3b2a;
     --font-display: 'Montserrat', 'Segoe UI', sans-serif;
     --font-body: 'Source Sans 3', 'Segoe UI', sans-serif;
   }
@@ -30,11 +33,12 @@
   }
 
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply text-slate-900 antialiased;
     background-image:
-      radial-gradient(circle at 12% 18%, rgba(254, 185, 16, 0.18), transparent 40%),
+      radial-gradient(circle at 12% 18%, rgba(245, 179, 1, 0.18), transparent 40%),
       radial-gradient(circle at 88% 5%, rgba(17, 24, 39, 0.08), transparent 35%),
-      linear-gradient(120deg, rgba(254, 185, 16, 0.08), rgba(255, 255, 255, 0));
+      linear-gradient(120deg, rgba(245, 179, 1, 0.08), rgba(255, 255, 255, 0)),
+      linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
   }
 
   html {
@@ -46,17 +50,19 @@
   }
 
   .dark body {
-    background: #0b0b0b;
-    color: #e2e8f0;
+    background: radial-gradient(circle at 20% 20%, rgba(245, 179, 1, 0.08), transparent 45%),
+      radial-gradient(circle at 80% 0%, rgba(255, 204, 72, 0.07), transparent 45%),
+      #0b0f14;
+    color: #f8fafc;
   }
 
   .dark .bg-white {
     background-color: #0f172a !important;
-    color: #e2e8f0 !important;
+    color: #f8fafc !important;
   }
   .dark .bg-slate-50,
   .dark .bg-slate-100 {
-    background-color: #0b1324 !important;
+    background-color: #0b1220 !important;
   }
   .dark .text-slate-900,
   .dark .text-slate-800,
@@ -64,13 +70,17 @@
   .dark .text-slate-600 {
     color: #e2e8f0 !important;
   }
+  .dark .text-slate-500,
+  .dark .text-slate-400 {
+    color: #cbd5f5 !important;
+  }
   .dark .border-slate-200,
   .dark .border-slate-300 {
-    border-color: #1f2937 !important;
+    border-color: #1f2a37 !important;
   }
   .dark .bg-amber-50,
   .dark .bg-amber-100 {
-    background-color: #1f1a0b !important;
+    background-color: rgba(245, 179, 1, 0.16) !important;
     color: #fde68a !important;
   }
 }
@@ -83,11 +93,39 @@
   .pill {
     @apply inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase;
   }
+
+  .app-shell {
+    @apply min-h-screen text-slate-900;
+    background-image:
+      radial-gradient(circle at 12% 12%, rgba(245, 179, 1, 0.18), transparent 42%),
+      radial-gradient(circle at 88% 8%, rgba(12, 59, 42, 0.08), transparent 40%),
+      linear-gradient(180deg, #ffffff 0%, #f6f4ef 60%, #f1f5f9 100%);
+  }
+
+  .dark .app-shell {
+    background-image:
+      radial-gradient(circle at 18% 18%, rgba(245, 179, 1, 0.12), transparent 45%),
+      radial-gradient(circle at 78% 6%, rgba(12, 59, 42, 0.14), transparent 45%),
+      linear-gradient(180deg, #0b0f14 0%, #0b1220 60%, #0b0f14 100%);
+  }
+
+  .app-sidebar {
+    background: linear-gradient(180deg, #0b0f14 0%, #0f172a 45%, #0b0f14 100%);
+    color: #f8fafc;
+  }
+
+  .app-header {
+    background: rgba(255, 255, 255, 0.92);
+  }
+
+  .dark .app-header {
+    background: rgba(15, 23, 42, 0.85);
+  }
 }
 
 @layer utilities {
   .text-gradient {
-    background: linear-gradient(90deg, var(--tae-yellow-strong), #fbbf24, var(--tae-yellow));
+    background: linear-gradient(90deg, var(--tae-copper), var(--tae-gold), var(--tae-amber));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
   }
@@ -98,8 +136,8 @@
 
   .surface-grid {
     background-image:
-      linear-gradient(to right, rgba(30, 41, 59, 0.06) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(30, 41, 59, 0.06) 1px, transparent 1px);
+      linear-gradient(to right, rgba(245, 179, 1, 0.08) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(12, 59, 42, 0.06) 1px, transparent 1px);
     background-size: 40px 40px;
   }
 }

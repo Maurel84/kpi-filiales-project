@@ -33,6 +33,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [profileLoading, setProfileLoading] = useState(false);
 
+  const getGeoSnapshot = async () => {
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
+      return null;
+    }
+    if (navigator.permissions?.query) {
+      try {
+        const status = await navigator.permissions.query({ name: 'geolocation' as PermissionName });
+        if (status.state !== 'granted') {
+          return null;
+        }
+      } catch {
+        return null;
+      }
+    } else {
+      return null;
+    }
+
+    return new Promise<{ lat: number; lon: number; accuracy: number } | null>((resolve) => {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          resolve({
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+          });
+        },
+        () => resolve(null),
+        { enableHighAccuracy: false, timeout: 2000, maximumAge: 600000 }
+      );
+    });
+  };
+
   const logAuthEvent = async (event: 'signed_in' | 'signed_out', userId: string | null) => {
     if (!userId) return;
     if (typeof window !== 'undefined') {
@@ -58,11 +90,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     }
     try {
+      const timeZone = typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : null;
+      const locale = typeof navigator !== 'undefined' ? navigator.language : null;
+      const geo = await getGeoSnapshot();
       await supabase.from('auth_events').insert({
         user_id: userId,
         event,
         user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
         ip_address: null,
+        time_zone: timeZone,
+        locale,
+        geo_lat: geo?.lat ?? null,
+        geo_lon: geo?.lon ?? null,
+        geo_accuracy: geo?.accuracy ?? null,
       });
     } catch {
       // Ignore audit errors to avoid blocking auth.

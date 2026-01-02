@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck, ToggleLeft, ToggleRight, UserPlus } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2, ShieldCheck, SlidersHorizontal, ToggleLeft, ToggleRight, UserPlus, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import type { Database } from '../../lib/database.types';
@@ -7,6 +7,14 @@ import type { Database } from '../../lib/database.types';
 type UserProfile = Database['public']['Tables']['users_profiles']['Row'];
 type Filiale = Pick<Database['public']['Tables']['filiales']['Row'], 'id' | 'nom' | 'code' | 'actif'>;
 type AuthEvent = Database['public']['Tables']['auth_events']['Row'];
+type VendeurRef = Pick<Database['public']['Tables']['vendeurs_reference']['Row'], 'id' | 'nom' | 'code' | 'actif'>;
+type ModulePermission = Database['public']['Tables']['user_module_permissions']['Row'];
+
+type ModuleOption = {
+  id: string;
+  label: string;
+  roles: UserProfile['role'][] | 'all';
+};
 
 const roleLabels: Record<UserProfile['role'], string> = {
   admin_siege: 'Admin siège',
@@ -15,6 +23,29 @@ const roleLabels: Record<UserProfile['role'], string> = {
   technicien: 'Technicien',
   saisie: 'Saisie',
 };
+
+const moduleOptions: ModuleOption[] = [
+  { id: 'dashboard', label: 'Tableau de bord', roles: 'all' },
+  { id: 'kpis', label: 'KPIs & Reporting', roles: 'all' },
+  { id: 'plan-actions', label: "Plan d'actions", roles: 'all' },
+  { id: 'pdm', label: 'Part de marche (PDM)', roles: ['manager_filiale', 'admin_siege'] },
+  { id: 'forecasts', label: 'Previsions (Forecasts)', roles: ['manager_filiale', 'admin_siege', 'commercial'] },
+  { id: 'visites-clients', label: 'Visites & Opportunites', roles: ['commercial', 'manager_filiale', 'admin_siege'] },
+  { id: 'stocks', label: 'Gestion des Stocks', roles: 'all' },
+  { id: 'commandes', label: 'Commandes Fournisseurs', roles: 'all' },
+  { id: 'commandes-clients', label: 'Commandes Clients', roles: ['commercial', 'manager_filiale', 'admin_siege'] },
+  { id: 'ventes', label: 'Ventes', roles: 'all' },
+  { id: 'ventes-perdues', label: 'Ventes Perdues', roles: ['commercial', 'manager_filiale', 'admin_siege'] },
+  { id: 'parc-machines', label: 'Parc Machines', roles: 'all' },
+  { id: 'inspections', label: 'Inspections Techniques', roles: ['technicien', 'manager_filiale', 'admin_siege'] },
+  { id: 'budgets', label: 'Budgets', roles: ['manager_filiale', 'admin_siege'] },
+  { id: 'sessions-inter', label: 'Sessions Interfiliales', roles: ['manager_filiale', 'admin_siege'] },
+  { id: 'documents-imports', label: 'Documents & Imports', roles: ['admin_siege'] },
+  { id: 'power-bi', label: 'Power BI', roles: ['admin_siege', 'manager_filiale'] },
+  { id: 'users', label: 'Utilisateurs', roles: ['admin_siege'] },
+  { id: 'auth-events', label: 'Journal des connexions', roles: ['admin_siege', 'manager_filiale'] },
+  { id: 'data-exports', label: 'Exports', roles: ['admin_siege'] },
+];
 
 const defaultForm = {
   prenom: '',
@@ -36,12 +67,18 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
   const [users, setUsers] = useState<UserProfile[]>([]);
   const [filiales, setFiliales] = useState<Filiale[]>([]);
   const [authEvents, setAuthEvents] = useState<AuthEvent[]>([]);
+  const [vendeurs, setVendeurs] = useState<VendeurRef[]>([]);
+  const [selectedVendeur, setSelectedVendeur] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitLoading, setSubmitLoading] = useState(false);
   const [formData, setFormData] = useState(defaultForm);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [authEventsError, setAuthEventsError] = useState('');
+  const [permissionsUser, setPermissionsUser] = useState<UserProfile | null>(null);
+  const [modulePermissions, setModulePermissions] = useState<Record<string, boolean>>({});
+  const [permissionsLoading, setPermissionsLoading] = useState(false);
+  const [permissionsError, setPermissionsError] = useState('');
 
   const canManage = profile?.role === 'admin_siege';
 
@@ -77,10 +114,12 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
         { data: usersData, error: usersError },
         { data: filialesData },
         { data: authEventsData, error: authEventsError },
+        { data: vendeursData },
       ] = await Promise.all([
         supabase.from('users_profiles').select('*').order('created_at', { ascending: false }).limit(200),
         supabase.from('filiales').select('id, nom, code, actif').order('nom'),
         supabase.from('auth_events').select('*').order('created_at', { ascending: false }).limit(100),
+        supabase.from('vendeurs_reference').select('id, nom, code, actif').eq('actif', true).order('nom'),
       ]);
 
       if (usersError) {
@@ -97,6 +136,9 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
       }
       if (authEventsData) {
         setAuthEvents(authEventsData as AuthEvent[]);
+      }
+      if (vendeursData) {
+        setVendeurs(vendeursData as VendeurRef[]);
       }
       setLoading(false);
     };
@@ -121,6 +163,19 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
     return event === 'signed_in' ? 'Connexion' : 'Déconnexion';
   };
 
+  const formatEventLocation = (event: AuthEvent) => {
+    const parts: string[] = [];
+    if (event.time_zone) parts.push(event.time_zone);
+    if (event.locale) parts.push(event.locale);
+    if (typeof event.geo_lat === 'number' && typeof event.geo_lon === 'number') {
+      parts.push(`${event.geo_lat.toFixed(2)}, ${event.geo_lon.toFixed(2)}`);
+      if (typeof event.geo_accuracy === 'number') {
+        parts.push(`~${Math.round(event.geo_accuracy)}m`);
+      }
+    }
+    return parts.length > 0 ? parts.join(' | ') : 'N/A';
+  };
+
   const formatEventDate = (value: string) => {
     return new Date(value).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' });
   };
@@ -131,6 +186,83 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
       return 'Journal des connexions indisponible: appliquez la migration auth_events puis relancez.';
     }
     return `Journal des connexions indisponible: ${message}`;
+  };
+
+  const applyVendeurToForm = (vendeurNom: string) => {
+    const parts = vendeurNom.split(' ').filter(Boolean);
+    if (parts.length === 0) return;
+    const prenom = parts[0].replace('.', '');
+    const nom = parts.slice(1).join(' ') || parts[0];
+    setFormData((prev) => ({
+      ...prev,
+      prenom: prev.prenom || prenom,
+      nom: prev.nom || nom,
+      role: 'commercial',
+      poste: prev.poste || 'Vendeur',
+    }));
+  };
+
+  const canAccessByRole = (role: UserProfile['role'], module: ModuleOption) => {
+    if (module.roles === 'all') return true;
+    return module.roles.includes(role);
+  };
+
+  const openPermissions = async (user: UserProfile) => {
+    setPermissionsUser(user);
+    setPermissionsLoading(true);
+    setPermissionsError('');
+    setModulePermissions({});
+    const { data, error } = await supabase
+      .from('user_module_permissions')
+      .select('module_id, enabled')
+      .eq('user_id', user.id);
+    if (error) {
+      setPermissionsError(error.message);
+    } else if (data) {
+      const map: Record<string, boolean> = {};
+      (data as ModulePermission[]).forEach((row) => {
+        map[row.module_id] = row.enabled;
+      });
+      setModulePermissions(map);
+    }
+    setPermissionsLoading(false);
+  };
+
+  const closePermissions = () => {
+    setPermissionsUser(null);
+    setModulePermissions({});
+    setPermissionsError('');
+  };
+
+  const toggleModulePermission = async (moduleId: string, enabled: boolean) => {
+    if (!permissionsUser) return;
+    setPermissionsError('');
+    const { error } = await supabase
+      .from('user_module_permissions')
+      .upsert(
+        {
+          user_id: permissionsUser.id,
+          module_id: moduleId,
+          enabled,
+        },
+        { onConflict: 'user_id,module_id' }
+      );
+    if (error) {
+      setPermissionsError(error.message);
+      return;
+    }
+    setModulePermissions((prev) => ({ ...prev, [moduleId]: enabled }));
+  };
+
+  const resetModulePermissions = async () => {
+    if (!permissionsUser) return;
+    setPermissionsError('');
+    const { error } = await supabase.from('user_module_permissions').delete().eq('user_id', permissionsUser.id);
+    if (error) {
+      setPermissionsError(error.message);
+      return;
+    }
+    setModulePermissions({});
   };
 
   const handleCreate = async () => {
@@ -174,6 +306,7 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
     setSubmitLoading(false);
     setSuccess('Compte créé et rattaché à la filiale.');
     setFormData(defaultForm);
+    setSelectedVendeur('');
     await refreshUsers();
   };
 
@@ -258,6 +391,27 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-700">Vendeur (liste)</label>
+            <select
+              className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+              value={selectedVendeur}
+              onChange={(e) => {
+                const value = e.target.value;
+                setSelectedVendeur(value);
+                if (value) {
+                  applyVendeurToForm(value);
+                }
+              }}
+            >
+              <option value="">Aucun</option>
+              {vendeurs.map((vendeur) => (
+                <option key={vendeur.id} value={vendeur.nom}>
+                  {vendeur.nom}
+                </option>
+              ))}
+            </select>
+          </div>
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-700">Prénom</label>
             <input
@@ -380,6 +534,7 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Rôle</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Filiale</th>
                 <th className="text-center py-3 px-4 text-sm font-semibold text-slate-700">Accès</th>
+                <th className="text-center py-3 px-4 text-sm font-semibold text-slate-700">Modules</th>
                 <th className="text-right py-3 px-4 text-sm font-semibold text-slate-700">Action</th>
               </tr>
             </thead>
@@ -409,6 +564,15 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
                       {user.actif ? 'Actif' : 'Inactif'}
                     </span>
                   </td>
+                  <td className="py-3 px-4 text-center">
+                    <button
+                      onClick={() => openPermissions(user)}
+                      className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:border-amber-200 hover:text-amber-700"
+                    >
+                      <SlidersHorizontal className="w-4 h-4" />
+                      Modules
+                    </button>
+                  </td>
                   <td className="py-3 px-4 text-right">
                     <button
                       onClick={() => toggleActive(user)}
@@ -426,7 +590,7 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
               ))}
               {users.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-sm text-slate-500">
+                  <td colSpan={7} className="py-6 text-center text-sm text-slate-500">
                     Aucun utilisateur enregistré.
                   </td>
                 </tr>
@@ -491,7 +655,8 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
                         {formatEventDate(event.created_at)}
                       </td>
                       <td className="py-3 px-4 text-sm text-slate-600">
-                        {event.user_agent ? event.user_agent.slice(0, 60) : 'N/A'}
+                        <div>{event.user_agent ? event.user_agent.slice(0, 60) : 'N/A'}</div>
+                        <div className="text-xs text-slate-400">{formatEventLocation(event)}</div>
                       </td>
                     </tr>
                   ))}
@@ -519,6 +684,92 @@ export function UsersManagementView({ onNavigate }: UsersManagementViewProps) {
           </>
         )}
       </div>
+      {permissionsUser && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/50 p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl p-6 relative">
+            <button
+              onClick={closePermissions}
+              className="absolute right-4 top-4 text-slate-500 hover:text-slate-800"
+            >
+              <X className="w-5 h-5" />
+            </button>
+            <div className="flex items-center gap-3 mb-4">
+              <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <SlidersHorizontal className="w-5 h-5" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-500">Permissions modules</p>
+                <h2 className="text-lg font-semibold text-slate-900">
+                  {getUserLabel(permissionsUser.id)}
+                </h2>
+              </div>
+            </div>
+
+            {permissionsError && (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 mb-4">
+                {permissionsError}
+              </div>
+            )}
+
+            {permissionsLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="w-6 h-6 text-amber-600 animate-spin" />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {moduleOptions.map((module) => {
+                  const roleAllowed = permissionsUser ? canAccessByRole(permissionsUser.role, module) : false;
+                  const explicit = modulePermissions[module.id];
+                  const enabled = roleAllowed && (explicit ?? true);
+                  return (
+                    <div
+                      key={module.id}
+                      className="flex items-center justify-between rounded-xl border border-slate-200 px-4 py-3"
+                    >
+                      <div>
+                        <p className="text-sm font-semibold text-slate-900">{module.label}</p>
+                        <p className="text-xs text-slate-500">
+                          {roleAllowed ? 'Acces par role' : 'Non disponible pour ce role'}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => toggleModulePermission(module.id, !enabled)}
+                        disabled={!roleAllowed}
+                        className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold ${
+                          enabled
+                            ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                            : 'border-slate-200 bg-slate-50 text-slate-600'
+                        } ${!roleAllowed ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      >
+                        {enabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
+                        {enabled ? 'Actif' : 'Desactive'}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="mt-6 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={resetModulePermissions}
+                className="text-sm font-semibold text-slate-600 hover:text-slate-800"
+              >
+                Revenir au role par defaut
+              </button>
+              <button
+                type="button"
+                onClick={closePermissions}
+                className="px-4 py-2 rounded-lg border border-slate-200 text-slate-700 hover:bg-slate-50"
+              >
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
