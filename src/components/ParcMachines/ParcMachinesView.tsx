@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useMemo, useState } from 'react';
 import { Plus, X, MapPin } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
@@ -12,19 +12,22 @@ type Machine = Database['public']['Tables']['parc_machines']['Row'];
 export function ParcMachinesView() {
   const { profile } = useAuth();
   const { filialeId, isAdmin } = useFilialeContext();
-  const { modeles, modeleLookup, pays } = useListeReference();
+  const { modeles, modeleLookup, marques, pays } = useListeReference();
   const modeleListId = 'parc-machines-modeles';
+  const marqueListId = 'parc-machines-marques';
   const paysListId = 'parc-machines-pays';
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'machine' | 'client' | 'notes'>('machine');
+  const showAllTabs = true;
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
     numero_serie: '',
     marque: '',
     modele: '',
+    quantite: '1',
     client_nom: '',
     pays: '',
     ville: '',
@@ -34,6 +37,21 @@ export function ParcMachinesView() {
     coordonnees_gps: '',
     commentaires: '',
   });
+
+  const marqueOptions = useMemo(
+    () => marques.map((marque) => marque.nom).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [marques]
+  );
+
+  const modeleOptions = useMemo(() => {
+    const trimmed = formData.marque?.trim().toLowerCase();
+    const filtered = trimmed
+      ? modeles.filter((modele) => modele.marque?.toLowerCase() === trimmed)
+      : modeles;
+    return Array.from(new Set(filtered.map((modele) => modele.label).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [formData.marque, modeles]);
 
   useEffect(() => {
     const load = async () => {
@@ -74,8 +92,13 @@ export function ParcMachinesView() {
       setSubmitError(isAdmin ? 'Selectionnez une filiale active avant de saisir une machine.' : 'Associez une filiale au profil avant de saisir une machine.');
       return;
     }
+    const quantiteValue = Number(formData.quantite);
+    if (!Number.isFinite(quantiteValue) || quantiteValue <= 0) {
+      setSubmitError('La quantite doit etre superieure a 0.');
+      return;
+    }
     if (!formData.numero_serie || !formData.marque || !formData.modele || !formData.client_nom || !formData.pays) {
-      setSubmitError('Numéro de série, marque, modèle, client et pays sont requis.');
+      setSubmitError('NumÃ©ro de sÃ©rie, marque, modÃ¨le, client et pays sont requis.');
       return;
     }
     setSubmitError('');
@@ -84,6 +107,7 @@ export function ParcMachinesView() {
       numero_serie: formData.numero_serie,
       marque: formData.marque,
       modele: formData.modele,
+      quantite: quantiteValue,
       client_nom: formData.client_nom,
       pays: formData.pays,
       ville: formData.ville || null,
@@ -106,6 +130,7 @@ export function ParcMachinesView() {
       numero_serie: '',
       marque: '',
       modele: '',
+      quantite: '1',
       client_nom: '',
       pays: '',
       ville: '',
@@ -155,12 +180,13 @@ export function ParcMachinesView() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-200">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">N° Série</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marque / Modèle</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">NÂ° SÃ©rie</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marque / ModÃ¨le</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Quantite</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Client</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Pays</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Statut</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Dernière inspection</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">DerniÃ¨re inspection</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
@@ -171,6 +197,7 @@ export function ParcMachinesView() {
                     <div className="font-semibold text-slate-900">{machine.marque}</div>
                     <div className="text-xs text-slate-500">{machine.modele}</div>
                   </td>
+                  <td className="py-3 px-4 text-sm text-slate-700">{Number(machine.quantite ?? 0).toLocaleString('fr-FR')}</td>
                   <td className="py-3 px-4 text-sm text-slate-900">{machine.client_nom}</td>
                   <td className="py-3 px-4 text-sm text-slate-700 flex items-center gap-1">
                     <MapPin className="w-4 h-4 text-slate-400" />
@@ -184,14 +211,14 @@ export function ParcMachinesView() {
                   <td className="py-3 px-4 text-sm text-slate-600">
                     {machine.date_derniere_inspection
                       ? new Date(machine.date_derniere_inspection).toLocaleDateString('fr-FR')
-                      : '—'}
+                      : 'â€”'}
                   </td>
                 </tr>
               ))}
               {machines.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-6 text-center text-sm text-slate-500">
-                    Aucune machine enregistrée.
+                  <td colSpan={7} className="py-6 text-center text-sm text-slate-500">
+                    Aucune machine enregistrÃ©e.
                   </td>
                 </tr>
               )}
@@ -211,16 +238,18 @@ export function ParcMachinesView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Ajouter une machine au parc</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'machine', label: 'Machine' },
-                { id: 'client', label: 'Client' },
-                { id: 'notes', label: 'Notes' },
-              ]}
-              activeTab={modalTab}
-              onChange={(key) => setModalTab(key as typeof modalTab)}
-            />
-            {modalTab === 'machine' && (
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'machine', label: 'Machine' },
+                  { id: 'client', label: 'Client' },
+                  { id: 'notes', label: 'Notes' },
+                ]}
+                activeTab={modalTab}
+                onChange={(key) => setModalTab(key as typeof modalTab)}
+              />
+            )}
+            {(showAllTabs || modalTab === 'machine') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Numero de serie</label>
@@ -234,6 +263,7 @@ export function ParcMachinesView() {
                   <label className="text-sm font-medium text-slate-700">Marque</label>
                   <input
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    list={marqueListId}
                     value={formData.marque}
                     onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
                   />
@@ -245,6 +275,17 @@ export function ParcMachinesView() {
                     list={modeleListId}
                     value={formData.modele}
                     onChange={(e) => handleModeleChange(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Quantite</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    value={formData.quantite}
+                    onChange={(e) => setFormData({ ...formData, quantite: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -271,7 +312,7 @@ export function ParcMachinesView() {
                 </div>
               </div>
             )}
-            {modalTab === 'client' && (
+            {(showAllTabs || modalTab === 'client') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Client</label>
@@ -317,7 +358,7 @@ export function ParcMachinesView() {
                 </div>
               </div>
             )}
-            {modalTab === 'notes' && (
+            {(showAllTabs || modalTab === 'notes') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium text-slate-700">Commentaires</label>
@@ -332,8 +373,13 @@ export function ParcMachinesView() {
             )}
 
             <datalist id={modeleListId}>
-              {modeles.map((modele) => (
-                <option key={modele.id} value={modele.label} />
+              {modeleOptions.map((modele) => (
+                <option key={modele} value={modele} />
+              ))}
+            </datalist>
+            <datalist id={marqueListId}>
+              {marqueOptions.map((marque) => (
+                <option key={marque} value={marque} />
               ))}
             </datalist>
             <datalist id={paysListId}>
@@ -370,6 +416,7 @@ export function ParcMachinesView() {
     </>
   );
 }
+
 
 
 

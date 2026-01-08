@@ -5,8 +5,8 @@ import { useFilialeContext } from '../../contexts/FilialeContext';
 import { supabase } from '../../lib/supabase';
 import type { Database } from '../../lib/database.types';
 import { ModalTabs } from '../ui/ModalTabs';
+import { useListeReference } from '../../hooks/useListeReference';
 
-type Marque = { id: string; nom: string };
 type PdmInsert = Database['public']['Tables']['pdm_entries']['Insert'];
 type SourceType = NonNullable<PdmInsert['source_industrie_type']>;
 type PdmForm = {
@@ -30,136 +30,6 @@ type PDMEntryRow = {
 };
 
 const SOURCE_OPTIONS: SourceType[] = ['AEM TABLE', 'WITS Shipment', 'WITS Order'];
-
-const NARDI_CATEGORIES = [
-  'Lavorazione e preparazione del terreno',
-  'Aratri',
-  'Coltivatori',
-  'Coltivatori specializzati vigneto/frutteto',
-  'Erpici',
-  'Rulli Cambridge',
-  'Sarchiatrici',
-  'Seminatrici',
-  'Semina e post semina',
-  'Trinciatrici',
-  'Zappatrici',
-  'Fertilizzazione',
-  'Concimatori',
-  'Manutenzione del verde',
-];
-
-const CATEGORY_BY_MARQUE: Record<string, string[]> = {
-  KALMAR: ['FLT', 'RST', 'ECH', 'TT', 'STRADDLE'],
-  MANITOU: [
-    'MEWP',
-    'R.T. FORKLIFTS',
-    'TELEHANDLERS',
-    'Class 1 - Electric Cb. Rider Trucks',
-    'Class 2 - Electric Warehouse Rider Trucks',
-    'Class 3 - Electric Warehouse Pedestrian Trucks',
-    'Class 4 & 5 - IC Cb. Trucks',
-  ],
-  'MASSEY FERGUSON': [
-    '0 a 49cv',
-    '50 a 69cv',
-    '70 a 89cv',
-    '90 a 109cv',
-    '110 a 129cv',
-    '130 a 149cv',
-    '150 a 169cv',
-    '170 a 199cv',
-    '200 a 249cv',
-    '340+ cv',
-    'Class 3',
-    'Class 4',
-    'Class 5',
-    'Class 6',
-    'Class 7',
-    'Class 8',
-    'Simple',
-    'Double',
-    'TRACTEUR',
-    'HARVESTER COMBINE',
-    'BALER',
-  ],
-  NARDI: NARDI_CATEGORIES,
-};
-
-const CATEGORY_DEFINITIONS: Record<string, { label: string; description: string }[]> = {
-  KALMAR: [
-    { label: 'FLT', description: 'Fork Lift Truck (chariots elevateurs lourds).' },
-    { label: 'RST', description: 'Reach Stacker (manutention de conteneurs).' },
-    { label: 'ECH', description: 'Empty Container Handler (manutention de conteneurs vides).' },
-    { label: 'TT', description: 'Terminal Tractor (tracteur de terminal portuaire).' },
-    { label: 'STRADDLE', description: 'Straddle Carrier (cavalier portuaire).' },
-  ],
-  MANITOU: [
-    { label: 'MEWP', description: 'Mobile Elevating Work Platform (nacelles elevatrices).' },
-    { label: 'R.T. FORKLIFTS', description: 'Rough Terrain Forklifts (chariots tout-terrain).' },
-    { label: 'TELEHANDLERS', description: 'Chariots telescopiques.' },
-    {
-      label: 'Class 1 - Electric Cb. Rider Trucks',
-      description: 'Chariots electriques a conducteur assis.',
-    },
-    {
-      label: 'Class 2 - Electric Warehouse Rider Trucks',
-      description: 'Chariots electriques d\'entrepot a conducteur.',
-    },
-    {
-      label: 'Class 3 - Electric Warehouse Pedestrian Trucks',
-      description: 'Chariots electriques d\'entrepot a conducteur accompagnant.',
-    },
-    {
-      label: 'Class 4 & 5 - IC Cb. Trucks',
-      description: 'Chariots thermiques contrepoids.',
-    },
-  ],
-  'MASSEY FERGUSON': [
-    { label: '0 a 49cv', description: 'Tracteurs, puissance de 0 a 49 cv.' },
-    { label: '50 a 69cv', description: 'Tracteurs, puissance de 50 a 69 cv.' },
-    { label: '70 a 89cv', description: 'Tracteurs, puissance de 70 a 89 cv.' },
-    { label: '90 a 109cv', description: 'Tracteurs, puissance de 90 a 109 cv.' },
-    { label: '110 a 129cv', description: 'Tracteurs, puissance de 110 a 129 cv.' },
-    { label: '130 a 149cv', description: 'Tracteurs, puissance de 130 a 149 cv.' },
-    { label: '150 a 169cv', description: 'Tracteurs, puissance de 150 a 169 cv.' },
-    { label: '170 a 199cv', description: 'Tracteurs, puissance de 170 a 199 cv.' },
-    { label: '200 a 249cv', description: 'Tracteurs, puissance de 200 a 249 cv.' },
-    { label: '340+ cv', description: 'Tracteurs, puissance superieure a 340 cv.' },
-    { label: 'Class 3', description: 'Moissonneuses-batteuses, classe 3.' },
-    { label: 'Class 4', description: 'Moissonneuses-batteuses, classe 4.' },
-    { label: 'Class 5', description: 'Moissonneuses-batteuses, classe 5.' },
-    { label: 'Class 6', description: 'Moissonneuses-batteuses, classe 6.' },
-    { label: 'Class 7', description: 'Moissonneuses-batteuses, classe 7.' },
-    { label: 'Class 8', description: 'Moissonneuses-batteuses, classe 8.' },
-    { label: 'Simple', description: 'Presses a balles, chambre simple.' },
-    { label: 'Double', description: 'Presses a balles, chambre double.' },
-    { label: 'TRACTEUR', description: 'Tracteurs agricoles.' },
-    { label: 'HARVESTER COMBINE', description: 'Moissonneuses-batteuses.' },
-    { label: 'BALER', description: 'Presses a balles.' },
-  ],
-  NARDI: [
-    {
-      label: 'Lavorazione e preparazione del terreno',
-      description: 'Travail du sol et preparation avant semis.',
-    },
-    { label: 'Aratri', description: 'Charrues pour le labour.' },
-    { label: 'Coltivatori', description: 'Outils de travail du sol en surface.' },
-    {
-      label: 'Coltivatori specializzati vigneto/frutteto',
-      description: 'Outils specialises pour vignes et vergers.',
-    },
-    { label: 'Erpici', description: 'Herses pour l\'affinage du sol.' },
-    { label: 'Rulli Cambridge', description: 'Rouleaux pour nivellement et compactage.' },
-    { label: 'Sarchiatrici', description: 'Bineuses pour desherbage mecanique.' },
-    { label: 'Seminatrici', description: 'Semis des cultures.' },
-    { label: 'Semina e post semina', description: 'Semis et operations post-semis.' },
-    { label: 'Trinciatrici', description: 'Broyeurs.' },
-    { label: 'Zappatrici', description: 'Fraises rotatives.' },
-    { label: 'Fertilizzazione', description: 'Apport d\'engrais.' },
-    { label: 'Concimatori', description: 'Epandeurs d\'engrais.' },
-    { label: 'Manutenzione del verde', description: 'Entretien des espaces verts.' },
-  ],
-};
 
 const COLUMN_GUIDE = [
   {
@@ -195,8 +65,6 @@ const SOURCE_GUIDE = [
   },
 ];
 
-const normalizeMarque = (value: string) => value.trim().toUpperCase();
-
 const defaultForm: PdmForm = {
   marque: '',
   categorie: '',
@@ -209,38 +77,44 @@ const defaultForm: PdmForm = {
 export function PDMView() {
   const { profile } = useAuth();
   const { filialeId, isAdmin } = useFilialeContext();
-  const [marques, setMarques] = useState<Marque[]>([]);
+  const { marques, categories, loading: referenceLoading } = useListeReference();
   const [pdmEntries, setPdmEntries] = useState<PDMEntryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMarque, setSelectedMarque] = useState<string>('all');
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'categorie' | 'sources'>('categorie');
+  const showAllTabs = true;
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState<PdmForm>(defaultForm);
   const [showColumnGuide, setShowColumnGuide] = useState(true);
   const [showCategoryGuide, setShowCategoryGuide] = useState(true);
 
-  const marqueOptions = useMemo(() => {
-    const options = marques.map((marque) => marque.nom).filter(Boolean);
-    if (!options.some((option) => normalizeMarque(option) === 'NARDI')) {
-      options.push('NARDI');
-    }
-    return options.sort((a, b) => a.localeCompare(b));
-  }, [marques]);
+  const marqueOptions = useMemo(
+    () => marques.map((marque) => marque.nom).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [marques]
+  );
+
+  const selectedMarqueId = useMemo(() => {
+    const trimmed = formData.marque?.trim().toLowerCase();
+    if (!trimmed) return null;
+    return marques.find((marque) => marque.nom?.toLowerCase() === trimmed)?.id ?? null;
+  }, [formData.marque, marques]);
 
   const categorieOptions = useMemo(() => {
-    if (!formData.marque) return [];
-    return CATEGORY_BY_MARQUE[normalizeMarque(formData.marque)] || [];
-  }, [formData.marque]);
+    const filtered = selectedMarqueId
+      ? categories.filter((categorie) => categorie.marque_id === selectedMarqueId)
+      : categories;
+    return filtered
+      .map((categorie) => categorie.nom)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }, [categories, selectedMarqueId]);
 
   const loadData = useCallback(async () => {
     if (!profile) return;
     setLoading(true);
-
-    const { data: marquesData } = await supabase.from('marques').select('id, nom').eq('actif', true).order('nom');
-    if (marquesData) setMarques(marquesData as Marque[]);
 
     let query = supabase
       .from('pdm_entries')
@@ -264,7 +138,7 @@ export function PDMView() {
     }
 
     setLoading(false);
-  }, [profile, selectedMarque, selectedYear]);
+  }, [filialeId, profile, selectedMarque, selectedYear]);
 
   useEffect(() => {
     loadData();
@@ -354,16 +228,29 @@ export function PDMView() {
     return Array.from(values);
   }, [pdmEntries]);
 
-  const guideMarques = useMemo(
-    () =>
-      Object.entries(CATEGORY_DEFINITIONS).filter(([, items]) => items.length > 0) as [
+  const guideMarques = useMemo(() => {
+    const marqueMap = new Map<string, string>();
+    marques.forEach((marque) => {
+      if (marque.id && marque.nom) marqueMap.set(marque.id, marque.nom);
+    });
+    const groups = new Map<string, string[]>();
+    categories.forEach((categorie) => {
+      if (!categorie.marque_id || !categorie.nom) return;
+      const marqueNom = marqueMap.get(categorie.marque_id);
+      if (!marqueNom) return;
+      const list = groups.get(marqueNom) ?? [];
+      list.push(categorie.nom);
+      groups.set(marqueNom, list);
+    });
+    return Array.from(groups.entries())
+      .map(([marque, items]) => [marque, Array.from(new Set(items)).sort((a, b) => a.localeCompare(b))] as [
         string,
-        { label: string; description: string }[],
-      ][],
-    []
-  );
+        string[],
+      ])
+      .sort((a, b) => a[0].localeCompare(b[0]));
+  }, [categories, marques]);
 
-  if (loading) {
+  if (loading || referenceLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600"></div>
@@ -545,8 +432,8 @@ export function PDMView() {
                     <p className="text-sm font-semibold text-slate-800 mb-2">{marque}</p>
                     <div className="space-y-1">
                       {items.map((item) => (
-                        <p key={`${marque}-${item.label}`} className="text-sm text-slate-600">
-                          <span className="font-semibold text-slate-700">{item.label}:</span> {item.description}
+                        <p key={`${marque}-${item}`} className="text-sm text-slate-600">
+                          {item}
                         </p>
                       ))}
                     </div>
@@ -581,16 +468,18 @@ export function PDMView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Ajouter une part de marche</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'categorie', label: 'Categorie' },
-                { id: 'sources', label: 'Sources' },
-              ]}
-              activeTab={activeTab}
-              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-            />
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'categorie', label: 'Categorie' },
+                  { id: 'sources', label: 'Sources' },
+                ]}
+                activeTab={activeTab}
+                onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+              />
+            )}
 
-            {activeTab === 'categorie' && (
+            {(showAllTabs || activeTab === 'categorie') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Marque</label>
@@ -644,7 +533,7 @@ export function PDMView() {
               </div>
             )}
 
-            {activeTab === 'sources' && (
+            {(showAllTabs || activeTab === 'sources') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Source industrie</label>

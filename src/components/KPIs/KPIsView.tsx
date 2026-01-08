@@ -19,6 +19,7 @@ export function KPIsView() {
   const [statusFilter, setStatusFilter] = useState<KPIStatusFilter>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'indicateur' | 'cible' | 'notes'>('indicateur');
+  const showAllTabs = true;
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -365,17 +366,19 @@ export function KPIsView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Ajouter un KPI</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'indicateur', label: 'Indicateur' },
-                { id: 'cible', label: 'Cible' },
-                { id: 'notes', label: 'Notes' },
-              ]}
-              activeTab={activeTab}
-              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-            />
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'indicateur', label: 'Indicateur' },
+                  { id: 'cible', label: 'Cible' },
+                  { id: 'notes', label: 'Notes' },
+                ]}
+                activeTab={activeTab}
+                onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+              />
+            )}
 
-            {activeTab === 'indicateur' && (
+            {(showAllTabs || activeTab === 'indicateur') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium text-slate-700">Indicateur</label>
@@ -424,7 +427,7 @@ export function KPIsView() {
               </div>
             )}
 
-            {activeTab === 'cible' && (
+            {(showAllTabs || activeTab === 'cible') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Cible</label>
@@ -471,7 +474,7 @@ export function KPIsView() {
               </div>
             )}
 
-            {activeTab === 'notes' && (
+            {(showAllTabs || activeTab === 'notes') && (
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Cause ecart</label>

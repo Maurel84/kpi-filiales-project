@@ -30,6 +30,7 @@ export function PlanActionsView() {
   const [filterPriorite, setFilterPriorite] = useState<PlanPrioriteFilter>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'details' | 'notes'>('details');
+  const showAllTabs = true;
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -372,16 +373,18 @@ export function PlanActionsView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Ajouter une action</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'details', label: 'Details' },
-                { id: 'notes', label: 'Notes' },
-              ]}
-              activeTab={activeTab}
-              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-            />
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'details', label: 'Details' },
+                  { id: 'notes', label: 'Notes' },
+                ]}
+                activeTab={activeTab}
+                onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+              />
+            )}
 
-            {activeTab === 'details' && (
+            {(showAllTabs || activeTab === 'details') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Action</label>
@@ -446,7 +449,7 @@ export function PlanActionsView() {
               </div>
             )}
 
-            {activeTab === 'notes' && (
+            {(showAllTabs || activeTab === 'notes') && (
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">Commentaires</label>
                 <textarea

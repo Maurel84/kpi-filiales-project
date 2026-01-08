@@ -216,7 +216,7 @@ export function MainLayout({
   useEffect(() => {
     const filialeId = effectiveFilialeId;
     if (!filialeId) {
-      setFilialeLabel(isAdmin ? 'Toutes les filiales' : null);
+      setFilialeLabel(isAdmin ? 'Selectionnez une filiale' : null);
       return;
     }
     let isMounted = true;
@@ -1013,17 +1013,17 @@ export function MainLayout({
                   {(isAdmin || profile?.filiale_id) && (
                     <span className="pill bg-amber-50 text-amber-700 border border-amber-100">
                       <MapPin className="w-3.5 h-3.5" />
-                      {filialeLabel || (isAdmin ? 'Toutes les filiales' : 'Filiale active')}
+                      {filialeLabel || (isAdmin ? 'Selectionnez une filiale' : 'Filiale active')}
                     </span>
                   )}
                   {isAdmin && filiales.length > 0 && (
-                    <div className="hidden lg:block">
+                    <div>
                       <select
                         value={activeFilialeId || ''}
                         onChange={(e) => setActiveFilialeId(e.target.value || null)}
                         className="rounded-full border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:border-amber-200 focus:outline-none focus:ring-2 focus:ring-amber-100"
                       >
-                        <option value="">Toutes les filiales</option>
+                        <option value="">Selectionner une filiale</option>
                         {filiales.map((filiale) => (
                           <option key={filiale.id} value={filiale.id}>
                             {filiale.nom || filiale.code || filiale.id}

@@ -19,8 +19,10 @@ type VenteForm = Omit<VenteInsert, 'filiale_id' | 'created_by'> & {
 export function VentesView() {
   const { profile } = useAuth();
   const { filialeId, isAdmin } = useFilialeContext();
-  const { modeles, modeleLookup, pays, vendeurs } = useListeReference();
+  const { modeles, modeleLookup, marques, categories, pays, vendeurs } = useListeReference();
   const modeleListId = 'ventes-modeles';
+  const marqueListId = 'ventes-marques';
+  const gammeListId = 'ventes-gammes';
   const paysListId = 'ventes-pays';
   const vendeursListId = 'ventes-vendeurs';
   const [ventes, setVentes] = useState<VenteRow[]>([]);
@@ -28,6 +30,7 @@ export function VentesView() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'client' | 'produit' | 'finances'>('client');
+  const showAllTabs = true;
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState<VenteForm>({
@@ -44,6 +47,37 @@ export function VentesView() {
     filiale_id: null,
     created_by: null,
   });
+
+  const marqueOptions = useMemo(
+    () => marques.map((marque) => marque.nom).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [marques]
+  );
+
+  const selectedMarqueId = useMemo(() => {
+    const trimmed = formData.marque?.trim().toLowerCase();
+    if (!trimmed) return null;
+    return marques.find((marque) => marque.nom?.toLowerCase() === trimmed)?.id ?? null;
+  }, [formData.marque, marques]);
+
+  const gammeOptions = useMemo(() => {
+    const filtered = selectedMarqueId
+      ? categories.filter((categorie) => categorie.marque_id === selectedMarqueId)
+      : categories;
+    return filtered
+      .map((categorie) => categorie.nom)
+      .filter(Boolean)
+      .sort((a, b) => a.localeCompare(b));
+  }, [categories, selectedMarqueId]);
+
+  const modeleOptions = useMemo(() => {
+    const trimmed = formData.marque?.trim().toLowerCase();
+    const filtered = trimmed
+      ? modeles.filter((modele) => modele.marque?.toLowerCase() === trimmed)
+      : modeles;
+    return Array.from(new Set(filtered.map((modele) => modele.label).filter(Boolean))).sort((a, b) =>
+      a.localeCompare(b)
+    );
+  }, [formData.marque, modeles]);
 
   const loadVentes = useCallback(async () => {
     if (!profile) return;
@@ -269,17 +303,19 @@ export function VentesView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Nouvelle vente</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'client', label: 'Client' },
-                { id: 'produit', label: 'Produit' },
-                { id: 'finances', label: 'Finances' },
-              ]}
-              activeTab={activeTab}
-              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-            />
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'client', label: 'Client' },
+                  { id: 'produit', label: 'Produit' },
+                  { id: 'finances', label: 'Finances' },
+                ]}
+                activeTab={activeTab}
+                onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+              />
+            )}
 
-            {activeTab === 'client' && (
+            {(showAllTabs || activeTab === 'client') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Date</label>
@@ -319,12 +355,13 @@ export function VentesView() {
               </div>
             )}
 
-            {activeTab === 'produit' && (
+            {(showAllTabs || activeTab === 'produit') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Marque</label>
                   <input
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    list={marqueListId}
                     value={formData.marque ?? ''}
                     onChange={(e) => setFormData({ ...formData, marque: e.target.value })}
                   />
@@ -350,6 +387,7 @@ export function VentesView() {
                   <label className="text-sm font-medium text-slate-700">Gamme</label>
                   <input
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    list={gammeListId}
                     value={formData.gamme || ''}
                     onChange={(e) => setFormData({ ...formData, gamme: e.target.value })}
                   />
@@ -357,7 +395,7 @@ export function VentesView() {
               </div>
             )}
 
-            {activeTab === 'finances' && (
+            {(showAllTabs || activeTab === 'finances') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">CA HT</label>
@@ -380,8 +418,18 @@ export function VentesView() {
             )}
 
             <datalist id={modeleListId}>
-              {modeles.map((modele) => (
-                <option key={modele.id} value={modele.label} />
+              {modeleOptions.map((modele) => (
+                <option key={modele} value={modele} />
+              ))}
+            </datalist>
+            <datalist id={marqueListId}>
+              {marqueOptions.map((marque) => (
+                <option key={marque} value={marque} />
+              ))}
+            </datalist>
+            <datalist id={gammeListId}>
+              {gammeOptions.map((gamme) => (
+                <option key={gamme} value={gamme} />
               ))}
             </datalist>
             <datalist id={paysListId}>

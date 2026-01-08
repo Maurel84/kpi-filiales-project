@@ -11,7 +11,8 @@ import {
   DollarSign,
   Sparkles,
   ArrowUpRight,
-  Shield
+  Shield,
+  BarChart3
 } from 'lucide-react';
 
 interface Stats {
@@ -24,6 +25,9 @@ interface Stats {
   ventesIncompletes: number;
   actionsRetard: number;
   pipeline90: number;
+  budgetYtd: number;
+  budgetTotal: number;
+  budgetRealiseYtd: number;
 }
 
 interface FilialePerformance {
@@ -36,6 +40,45 @@ interface FilialePerformance {
   stockRisque: number;
   pipeline90: number;
   actionsRetard: number;
+}
+
+interface BudgetProduitInsight {
+  produit: string;
+  territoires: string;
+  budgetYtd: number;
+  budgetTotal: number;
+  actualYtd: number;
+  executionPct: number;
+  gap: number;
+}
+
+interface BudgetConstructeurInsight {
+  constructeur: string;
+  budgetTotal: number;
+  sharePct: number;
+}
+
+interface BudgetTerritoireInsight {
+  territoire: string;
+  budgetYtd: number;
+  budgetTotal: number;
+  actualYtd: number;
+  actualTotal: number;
+  executionPct: number;
+  gap: number;
+}
+
+interface BudgetMargeInsight {
+  produit: string;
+  margeTotal: number;
+  caTotal: number;
+  margePct: number;
+}
+
+interface BudgetQuantiteInsight {
+  produit: string;
+  budgetYtd: number;
+  budgetTotal: number;
 }
 
 interface DashboardProps {
@@ -78,8 +121,25 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     ventesIncompletes: 0,
     actionsRetard: 0,
     pipeline90: 0,
+    budgetYtd: 0,
+    budgetTotal: 0,
+    budgetRealiseYtd: 0,
   });
   const [filialePerformance, setFilialePerformance] = useState<FilialePerformance[]>([]);
+  const [budgetInsights, setBudgetInsights] = useState<{
+    produits: BudgetProduitInsight[];
+    constructeurs: BudgetConstructeurInsight[];
+    territoires: BudgetTerritoireInsight[];
+    marges: BudgetMargeInsight[];
+    quantites: BudgetQuantiteInsight[];
+  }>({
+    produits: [],
+    constructeurs: [],
+    territoires: [],
+    marges: [],
+    quantites: [],
+  });
+  const [budgetYear, setBudgetYear] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadStats = useCallback(async () => {
@@ -99,12 +159,48 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       statut: string;
       ca_ht_potentiel?: number | null;
     };
+    type BudgetRow = {
+      filiale_id: string | null;
+      plan_compte: string | null;
+      produit?: string | null;
+      constructeur?: string | null;
+      territoire?: string | null;
+      cumul_fin_dec: number | null;
+      budget_jan: number | null;
+      budget_fev: number | null;
+      budget_mar: number | null;
+      budget_avr: number | null;
+      budget_mai: number | null;
+      budget_jui: number | null;
+      budget_juil: number | null;
+      budget_aou: number | null;
+      budget_sep: number | null;
+      budget_oct: number | null;
+      budget_nov: number | null;
+      budget_dec: number | null;
+    };
 
     const today = new Date();
     const currentMonth = today.toISOString().slice(0, 7);
+    const currentYear = today.getFullYear();
+    const monthsElapsed = today.getMonth() + 1;
     const horizon90 = new Date(today);
     horizon90.setDate(horizon90.getDate() + 90);
     const filialeFilter = filialeId ? { filiale_id: filialeId } : {};
+    const budgetMonthKeys: (keyof BudgetRow)[] = [
+      'budget_jan',
+      'budget_fev',
+      'budget_mar',
+      'budget_avr',
+      'budget_mai',
+      'budget_jui',
+      'budget_juil',
+      'budget_aou',
+      'budget_sep',
+      'budget_oct',
+      'budget_nov',
+      'budget_dec',
+    ];
 
     const fetchVentes = async () =>
       supabase
@@ -119,7 +215,17 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         .match(filialeFilter)
     );
 
-    const [ventesRes, stockRes, kpisRes, actionsRes, oppRes, filialesRes] = await Promise.all([
+    const fetchBudgets = async () => (
+      supabase
+        .from('budgets')
+        .select(
+          'filiale_id, plan_compte, produit, constructeur, territoire, cumul_fin_dec, budget_jan, budget_fev, budget_mar, budget_avr, budget_mai, budget_jui, budget_juil, budget_aou, budget_sep, budget_oct, budget_nov, budget_dec'
+        )
+        .eq('annee', currentYear)
+        .match(filialeFilter)
+    );
+
+    const [ventesRes, stockRes, kpisRes, actionsRes, oppRes, filialesRes, budgetsRes] = await Promise.all([
       fetchVentes(),
 
       supabase
@@ -142,6 +248,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         .from('filiales')
         .select('id, nom, code, devise')
         .match(filialeFilter),
+      fetchBudgets(),
     ]);
 
     const ventesData = (ventesRes.data ?? []) as VenteStatRow[];
@@ -150,11 +257,259 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     const actionsData = actionsRes.data ?? [];
     const oppData = (oppRes.data ?? []) as OpportuniteRow[];
     const filialesData = filialesRes.data ?? [];
+    let budgetsData = (budgetsRes.data ?? []) as BudgetRow[];
+    let effectiveBudgetYear = currentYear;
+
+    if (budgetsData.length === 0) {
+      const latestYearRes = await supabase
+        .from('budgets')
+        .select('annee')
+        .match(filialeFilter)
+        .order('annee', { ascending: false })
+        .limit(1);
+      const latestYear = latestYearRes.data?.[0]?.annee ?? null;
+      if (latestYear && latestYear !== currentYear) {
+        const fallbackRes = await supabase
+          .from('budgets')
+          .select(
+            'filiale_id, plan_compte, produit, constructeur, territoire, cumul_fin_dec, budget_jan, budget_fev, budget_mar, budget_avr, budget_mai, budget_jui, budget_juil, budget_aou, budget_sep, budget_oct, budget_nov, budget_dec'
+          )
+          .eq('annee', latestYear)
+          .match(filialeFilter);
+        budgetsData = (fallbackRes.data ?? []) as BudgetRow[];
+        effectiveBudgetYear = latestYear;
+      }
+    }
+
+    const budgetMonthLimit = effectiveBudgetYear === currentYear ? monthsElapsed : 12;
+    const budgetCutoff =
+      effectiveBudgetYear === currentYear
+        ? today
+        : new Date(effectiveBudgetYear, 11, 31, 23, 59, 59);
 
     const totalVentes = ventesData.length;
     const montantVentes = ventesData.reduce((sum, v) => sum + (v.ca_ht || 0), 0);
     const stockItems = stockData.length;
     const ventesMonth = ventesData.filter((v) => v.date_vente?.startsWith(currentMonth)).length;
+
+    const normalizeKey = (value: string | null | undefined) =>
+      (value || '')
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim();
+    const isChiffreAffaires = (value: string | null | undefined) => normalizeKey(value).includes('chiffre');
+    const isMargeBrute = (value: string | null | undefined) => normalizeKey(value).includes('marge');
+    const isQuantites = (value: string | null | undefined) => normalizeKey(value).includes('quantite');
+    const sumBudgetMonths = (row: BudgetRow, months: number) =>
+      budgetMonthKeys.slice(0, months).reduce((sum, key) => sum + (row[key] || 0), 0);
+
+    const caBudgets = budgetsData.filter((row) => isChiffreAffaires(row.plan_compte));
+    const margeBudgets = budgetsData.filter((row) => isMargeBrute(row.plan_compte));
+    const quantiteBudgets = budgetsData.filter((row) => isQuantites(row.plan_compte));
+    const budgetYtd = caBudgets.reduce((sum, row) => sum + sumBudgetMonths(row, budgetMonthLimit), 0);
+    const budgetTotal = caBudgets.reduce((sum, row) => {
+      const total = row.cumul_fin_dec ?? sumBudgetMonths(row, 12);
+      return sum + (total || 0);
+    }, 0);
+    const budgetRealiseYtd = ventesData.reduce((sum, vente) => {
+      if (!vente.date_vente) return sum;
+      const date = new Date(vente.date_vente);
+      if (Number.isNaN(date.getTime())) return sum;
+      if (date.getFullYear() !== effectiveBudgetYear) return sum;
+      if (date > budgetCutoff) return sum;
+      return sum + (vente.ca_ht || 0);
+    }, 0);
+
+    const resolveLabel = (value: string | null | undefined, fallback: string) => {
+      const trimmed = (value || '').trim();
+      return trimmed ? trimmed : fallback;
+    };
+
+    const produitBudgetMap = new Map<string, { budgetYtd: number; budgetTotal: number; actualYtd: number; territoires: Set<string> }>();
+    const margeMap = new Map<string, { margeTotal: number; caTotal: number }>();
+    const quantiteMap = new Map<string, { budgetYtd: number; budgetTotal: number }>();
+    const constructeurMap = new Map<string, number>();
+    const territoireBudgetMap = new Map<string, { budgetYtd: number; budgetTotal: number }>();
+    const filialeToTerritoire = new Map<string, string>();
+    const territoireActualYtdMap = new Map<string, number>();
+    const territoireActualTotalMap = new Map<string, number>();
+    const constructeurToProduit = new Map<string, string>();
+
+    caBudgets.forEach((row) => {
+      const produitLabel = resolveLabel(row.produit, 'Non renseigne');
+      const constructeurLabel = resolveLabel(row.constructeur, 'Non renseigne');
+      const territoireLabel = resolveLabel(row.territoire, 'Non renseigne');
+      const budgetYtdValue = sumBudgetMonths(row, budgetMonthLimit);
+      const budgetTotalValue = row.cumul_fin_dec ?? sumBudgetMonths(row, 12);
+
+      if (row.constructeur && row.produit) {
+        const key = normalizeKey(row.constructeur);
+        if (key && !constructeurToProduit.has(key)) {
+          constructeurToProduit.set(key, row.produit);
+        }
+      }
+
+      const produitEntry = produitBudgetMap.get(produitLabel) || {
+        budgetYtd: 0,
+        budgetTotal: 0,
+        actualYtd: 0,
+        territoires: new Set<string>(),
+      };
+      produitEntry.budgetYtd += budgetYtdValue;
+      produitEntry.budgetTotal += budgetTotalValue;
+      if (territoireLabel) {
+        produitEntry.territoires.add(territoireLabel);
+      }
+      produitBudgetMap.set(produitLabel, produitEntry);
+
+      const margeEntry = margeMap.get(produitLabel) || { margeTotal: 0, caTotal: 0 };
+      margeEntry.caTotal += budgetTotalValue;
+      margeMap.set(produitLabel, margeEntry);
+
+      const constructeurTotal = constructeurMap.get(constructeurLabel) || 0;
+      constructeurMap.set(constructeurLabel, constructeurTotal + budgetTotalValue);
+
+      const territoireEntry = territoireBudgetMap.get(territoireLabel) || { budgetYtd: 0, budgetTotal: 0 };
+      territoireEntry.budgetYtd += budgetYtdValue;
+      territoireEntry.budgetTotal += budgetTotalValue;
+      territoireBudgetMap.set(territoireLabel, territoireEntry);
+
+      if (row.filiale_id && territoireLabel) {
+        const existing = filialeToTerritoire.get(row.filiale_id);
+        if (!existing || existing === 'Non renseigne') {
+          filialeToTerritoire.set(row.filiale_id, territoireLabel);
+        }
+      }
+    });
+
+    margeBudgets.forEach((row) => {
+      const produitLabel = resolveLabel(row.produit, 'Non renseigne');
+      const budgetTotalValue = row.cumul_fin_dec ?? sumBudgetMonths(row, 12);
+      const margeEntry = margeMap.get(produitLabel) || { margeTotal: 0, caTotal: 0 };
+      margeEntry.margeTotal += budgetTotalValue;
+      margeMap.set(produitLabel, margeEntry);
+    });
+
+    quantiteBudgets.forEach((row) => {
+      const produitLabel = resolveLabel(row.produit, 'Non renseigne');
+      const budgetYtdValue = sumBudgetMonths(row, budgetMonthLimit);
+      const budgetTotalValue = row.cumul_fin_dec ?? sumBudgetMonths(row, 12);
+      const quantiteEntry = quantiteMap.get(produitLabel) || { budgetYtd: 0, budgetTotal: 0 };
+      quantiteEntry.budgetYtd += budgetYtdValue;
+      quantiteEntry.budgetTotal += budgetTotalValue;
+      quantiteMap.set(produitLabel, quantiteEntry);
+    });
+
+    const actualByProduit = new Map<string, number>();
+    ventesData.forEach((vente) => {
+      if (!vente.date_vente) return;
+      const date = new Date(vente.date_vente);
+      if (Number.isNaN(date.getTime())) return;
+      if (date.getFullYear() !== effectiveBudgetYear) return;
+      if (date > budgetCutoff) return;
+      const marqueKey = normalizeKey(vente.marque);
+      if (!marqueKey) return;
+      const produit = constructeurToProduit.get(marqueKey);
+      if (!produit) return;
+      const current = actualByProduit.get(produit) || 0;
+      actualByProduit.set(produit, current + (vente.ca_ht || 0));
+    });
+
+    actualByProduit.forEach((value, produit) => {
+      const entry = produitBudgetMap.get(produit);
+      if (entry) {
+        entry.actualYtd += value;
+      }
+    });
+
+    ventesData.forEach((vente) => {
+      if (!vente.date_vente || !vente.filiale_id) return;
+      const date = new Date(vente.date_vente);
+      if (Number.isNaN(date.getTime())) return;
+      if (date.getFullYear() !== effectiveBudgetYear) return;
+      const territoire = filialeToTerritoire.get(vente.filiale_id) || 'Non renseigne';
+      const totalValue = territoireActualTotalMap.get(territoire) || 0;
+      territoireActualTotalMap.set(territoire, totalValue + (vente.ca_ht || 0));
+      if (date > budgetCutoff) return;
+      const ytdValue = territoireActualYtdMap.get(territoire) || 0;
+      territoireActualYtdMap.set(territoire, ytdValue + (vente.ca_ht || 0));
+    });
+
+    const totalCaBudget = Array.from(constructeurMap.values()).reduce((sum, value) => sum + value, 0);
+
+    const formatTerritoires = (items: Set<string>) => {
+      const list = Array.from(items).filter(Boolean);
+      if (list.length === 0) return 'Non renseigne';
+      if (list.length <= 2) return list.join(', ');
+      return `${list.slice(0, 2).join(', ')} +${list.length - 2}`;
+    };
+
+    const produitInsights = Array.from(produitBudgetMap.entries())
+      .map(([produit, values]) => {
+        const executionPct = values.budgetYtd > 0 ? (values.actualYtd / values.budgetYtd) * 100 : 0;
+        return {
+          produit,
+          territoires: formatTerritoires(values.territoires),
+          budgetYtd: values.budgetYtd,
+          budgetTotal: values.budgetTotal,
+          actualYtd: values.actualYtd,
+          executionPct,
+          gap: values.actualYtd - values.budgetYtd,
+        };
+      })
+      .sort((a, b) => b.budgetTotal - a.budgetTotal);
+
+    const constructeurInsights = Array.from(constructeurMap.entries())
+      .map(([constructeur, budgetTotal]) => ({
+        constructeur,
+        budgetTotal,
+        sharePct: totalCaBudget > 0 ? (budgetTotal / totalCaBudget) * 100 : 0,
+      }))
+      .sort((a, b) => b.budgetTotal - a.budgetTotal)
+      .slice(0, 5);
+
+    const territoireKeys = new Set<string>([
+      ...Array.from(territoireBudgetMap.keys()),
+      ...Array.from(territoireActualYtdMap.keys()),
+      ...Array.from(territoireActualTotalMap.keys()),
+    ]);
+
+    const territoireInsights = Array.from(territoireKeys)
+      .map((territoire) => {
+        const budgets = territoireBudgetMap.get(territoire) || { budgetYtd: 0, budgetTotal: 0 };
+        const actualYtd = territoireActualYtdMap.get(territoire) || 0;
+        const actualTotal = territoireActualTotalMap.get(territoire) || 0;
+        const executionPct = budgets.budgetYtd > 0 ? (actualYtd / budgets.budgetYtd) * 100 : 0;
+        return {
+          territoire,
+          budgetYtd: budgets.budgetYtd,
+          budgetTotal: budgets.budgetTotal,
+          actualYtd,
+          actualTotal,
+          executionPct,
+          gap: actualYtd - budgets.budgetYtd,
+        };
+      })
+      .sort((a, b) => b.actualTotal - a.actualTotal)
+      .slice(0, 6);
+
+    const margeInsights = Array.from(margeMap.entries())
+      .map(([produit, values]) => ({
+        produit,
+        margeTotal: values.margeTotal,
+        caTotal: values.caTotal,
+        margePct: values.caTotal > 0 ? (values.margeTotal / values.caTotal) * 100 : 0,
+      }))
+      .sort((a, b) => b.margePct - a.margePct);
+
+    const quantiteInsights = Array.from(quantiteMap.entries())
+      .map(([produit, values]) => ({
+        produit,
+        budgetYtd: values.budgetYtd,
+        budgetTotal: values.budgetTotal,
+      }))
+      .sort((a, b) => b.budgetTotal - a.budgetTotal);
 
     const stockObsolete = stockData.filter(item => {
       const monthsOld = Math.floor(
@@ -262,7 +617,19 @@ export function Dashboard({ onNavigate }: DashboardProps) {
       ventesIncompletes,
       actionsRetard,
       pipeline90,
+      budgetYtd,
+      budgetTotal,
+      budgetRealiseYtd,
     });
+
+    setBudgetInsights({
+      produits: produitInsights,
+      constructeurs: constructeurInsights,
+      territoires: territoireInsights,
+      marges: margeInsights,
+      quantites: quantiteInsights,
+    });
+    setBudgetYear(effectiveBudgetYear);
 
     setFilialePerformance(performanceRows);
 
@@ -311,6 +678,11 @@ export function Dashboard({ onNavigate }: DashboardProps) {
     return `${Math.round(safeValue).toLocaleString()} ${devise}`;
   };
 
+  const formatEuro = (value: number) => {
+    const safeValue = Number.isFinite(value) ? value : 0;
+    return `${Math.round(safeValue).toLocaleString()} EUR`;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-80">
@@ -324,6 +696,9 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
   const obsoleteRate = stats.stockItems > 0
     ? Math.round((stats.stockObsolete / stats.stockItems) * 100)
+    : 0;
+  const budgetExecutionPct = stats.budgetYtd > 0
+    ? Math.round((stats.budgetRealiseYtd / stats.budgetYtd) * 100)
     : 0;
 
   return (
@@ -383,7 +758,7 @@ export function Dashboard({ onNavigate }: DashboardProps) {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         <StatCard
           title="Ventes totales"
           value={stats.totalVentes}
@@ -394,9 +769,17 @@ export function Dashboard({ onNavigate }: DashboardProps) {
 
         <StatCard
           title="Chiffre d'affaires"
-          value={`${Math.round(stats.montantVentes).toLocaleString()} XAF`}
+          value={`${Math.round(stats.montantVentes).toLocaleString()} EUR`}
           icon={DollarSign}
           tone="blue"
+        />
+
+        <StatCard
+          title="Execution budget YTD"
+          value={`${budgetExecutionPct}%`}
+          icon={BarChart3}
+          tone="purple"
+          subtitle={`${formatEuro(stats.budgetRealiseYtd)} / ${formatEuro(stats.budgetYtd)}`}
         />
 
         <StatCard
@@ -414,6 +797,199 @@ export function Dashboard({ onNavigate }: DashboardProps) {
           tone="purple"
         />
       </div>
+
+      {budgetInsights.produits.length > 0 && (
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          <div className="xl:col-span-2 bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">
+            <div className="flex flex-wrap items-start justify-between gap-4 mb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Budget CA vs realise (YTD)</h2>
+                <p className="text-sm text-slate-500">Focus equipement et agriculture</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+                Budget annuel {budgetYear ?? new Date().getFullYear()}: {formatEuro(stats.budgetTotal)}
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="py-2 px-3">Produit</th>
+                    <th className="py-2 px-3">Territoire</th>
+                    <th className="py-2 px-3">Budget YTD</th>
+                    <th className="py-2 px-3">Realise YTD</th>
+                    <th className="py-2 px-3">Ecart</th>
+                    <th className="py-2 px-3">Execution</th>
+                    <th className="py-2 px-3">Budget annuel</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {budgetInsights.produits.map((row) => {
+                    const execution = Math.round(row.executionPct);
+                    return (
+                      <tr key={row.produit} className="hover:bg-slate-50">
+                        <td className="py-2 px-3">
+                          <div className="text-sm font-semibold text-slate-900">{row.produit}</div>
+                        </td>
+                        <td className="py-2 px-3 text-sm text-slate-700">{row.territoires}</td>
+                        <td className="py-2 px-3 text-sm text-slate-700">{formatEuro(row.budgetYtd)}</td>
+                        <td className="py-2 px-3 text-sm text-slate-700">{formatEuro(row.actualYtd)}</td>
+                        <td
+                          className={`py-2 px-3 text-sm font-semibold ${
+                            row.gap >= 0 ? 'text-emerald-600 dark:text-emerald-200' : 'text-rose-600 dark:text-rose-200'
+                          }`}
+                        >
+                          {formatEuro(row.gap)}
+                        </td>
+                        <td className="py-2 px-3 text-sm text-slate-700">{execution}%</td>
+                        <td className="py-2 px-3 text-sm text-slate-700">{formatEuro(row.budgetTotal)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">CA annuel par territoire</h3>
+              {budgetInsights.territoires.length === 0 ? (
+                <p className="text-sm text-slate-500">Aucune donnee disponible</p>
+              ) : (
+                <div className="space-y-3">
+                  {(() => {
+                    const maxAnnual = Math.max(
+                      ...budgetInsights.territoires.map((row) => row.actualTotal),
+                      1
+                    );
+                    return budgetInsights.territoires.map((row) => {
+                      const widthPct = Math.round((row.actualTotal / maxAnnual) * 100);
+                      return (
+                        <div key={row.territoire} className="rounded-xl border border-slate-100 bg-slate-50/70 px-3 py-2">
+                          <div className="flex items-center justify-between text-sm">
+                            <p className="font-semibold text-slate-900">{row.territoire}</p>
+                            <p className="text-sm text-slate-700">{formatEuro(row.actualTotal)}</p>
+                          </div>
+                          <div className="mt-1 flex items-center justify-between text-xs text-slate-500">
+                            <span>Budget annuel {formatEuro(row.budgetTotal)}</span>
+                          </div>
+                          <div className="mt-2 h-2 rounded-full bg-slate-200/70 overflow-hidden">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-amber-500 to-yellow-500"
+                              style={{ width: `${widthPct}%` }}
+                            />
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                            <span>YTD {formatEuro(row.actualYtd)} / {formatEuro(row.budgetYtd)}</span>
+                            <span>{row.executionPct.toFixed(1)}% exec.</span>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              )}
+              {budgetInsights.territoires.length > 0 && (
+                <div className="mt-4 rounded-xl border border-slate-100 bg-white/60 p-3">
+                  {(() => {
+                    const totalActual = budgetInsights.territoires.reduce((sum, row) => sum + row.actualTotal, 0);
+                    const totalBudget = budgetInsights.territoires.reduce((sum, row) => sum + row.budgetTotal, 0);
+                    return (
+                      <>
+                        <div className="flex items-center justify-between text-xs text-slate-500">
+                          <span>Total CA annuel {formatEuro(totalActual)}</span>
+                          <span>Budget annuel {formatEuro(totalBudget)}</span>
+                        </div>
+                        <div className="mt-2 h-3 w-full rounded-full bg-slate-200/70 overflow-hidden flex">
+                          {budgetInsights.territoires.map((row, index) => {
+                            const width = totalActual > 0 ? (row.actualTotal / totalActual) * 100 : 0;
+                            const colorClass = [
+                              'bg-amber-500',
+                              'bg-sky-500',
+                              'bg-emerald-500',
+                              'bg-indigo-500',
+                              'bg-rose-500',
+                              'bg-yellow-500',
+                            ][index % 6];
+                            return (
+                              <div
+                                key={`${row.territoire}-stack`}
+                                className={colorClass}
+                                style={{ width: `${width}%` }}
+                                title={`${row.territoire}: ${formatEuro(row.actualTotal)}`}
+                              />
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">Top constructeurs (budget annuel)</h3>
+              {budgetInsights.constructeurs.length === 0 ? (
+                <p className="text-sm text-slate-500">Aucune donnee disponible</p>
+              ) : (
+                <div className="space-y-3">
+                  {budgetInsights.constructeurs.map((row) => (
+                    <div key={row.constructeur} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="font-semibold text-slate-900">{row.constructeur}</p>
+                        <p className="text-xs text-slate-500">{row.sharePct.toFixed(1)}% du budget</p>
+                      </div>
+                      <div className="text-sm text-slate-700">{formatEuro(row.budgetTotal)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">Marge budgetee</h3>
+              {budgetInsights.marges.length === 0 ? (
+                <p className="text-sm text-slate-500">Aucune marge budgetee</p>
+              ) : (
+                <div className="space-y-3">
+                  {budgetInsights.marges.slice(0, 4).map((row) => (
+                    <div key={row.produit} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="font-semibold text-slate-900">{row.produit}</p>
+                        <p className="text-xs text-slate-500">{formatEuro(row.margeTotal)} / {formatEuro(row.caTotal)}</p>
+                      </div>
+                      <div className="text-sm font-semibold text-slate-700">{row.margePct.toFixed(1)}%</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3">Quantites budgetees</h3>
+              {budgetInsights.quantites.length === 0 ? (
+                <p className="text-sm text-slate-500">Aucune quantite budgetee</p>
+              ) : (
+                <div className="space-y-3">
+                  {budgetInsights.quantites.slice(0, 4).map((row) => (
+                    <div key={row.produit} className="flex items-center justify-between text-sm">
+                      <div>
+                        <p className="font-semibold text-slate-900">{row.produit}</p>
+                        <p className="text-xs text-slate-500">
+                          YTD {Math.round(row.budgetYtd).toLocaleString()} / {Math.round(row.budgetTotal).toLocaleString()}
+                        </p>
+                      </div>
+                      <div className="text-sm text-slate-700">{Math.round(row.budgetTotal).toLocaleString()}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-2xl shadow-lg shadow-slate-900/5 border border-slate-100 p-6 dark:border-slate-800/70">

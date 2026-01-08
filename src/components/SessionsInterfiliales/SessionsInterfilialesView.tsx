@@ -9,12 +9,31 @@ import { ModalTabs } from '../ui/ModalTabs';
 type Session = Database['public']['Tables']['sessions_interfiliales']['Row'];
 type Filiale = { id: string; nom: string | null; code: string | null };
 type Article = { id: string; reference: string | null; libelle: string | null; marque: string | null; modele: string | null };
+type ArticleInsert = Database['public']['Tables']['articles']['Insert'];
 type StockItem = {
   id: string;
   numero_serie: string | null;
   marque: string | null;
   modele: string | null;
   filiale_id: string;
+  statut: Database['public']['Tables']['stock_items']['Row']['statut'];
+};
+
+const buildStockKey = (marque: string | null, modele: string | null) => {
+  const normalizedMarque = (marque || '').trim().toLowerCase();
+  const normalizedModele = (modele || '').trim().toLowerCase();
+  if (!normalizedMarque && !normalizedModele) return '';
+  return `${normalizedMarque}::${normalizedModele}`;
+};
+
+const buildArticleReference = (marque: string | null, modele: string | null) => {
+  const parts = [marque, modele].filter(Boolean).map((value) => value!.trim());
+  if (parts.length === 0) return '';
+  return parts
+    .join('-')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .toUpperCase();
 };
 
 export function SessionsInterfilialesView() {
@@ -27,6 +46,7 @@ export function SessionsInterfilialesView() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'transfert' | 'quantites' | 'notes'>('transfert');
+  const showAllTabs = true;
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -41,19 +61,23 @@ export function SessionsInterfilialesView() {
   });
 
   useEffect(() => {
+    let active = true;
     const load = async () => {
       if (!profile) {
-        setLoading(false);
+        if (active) setLoading(false);
         return;
       }
+      const canManageArticles = profile.role === 'admin_siege' || profile.role === 'manager_filiale';
       const baseQuery = supabase
         .from('sessions_interfiliales')
         .select('*')
         .order('date_demande', { ascending: false });
 
       if (!isAdmin && !filialeId) {
-        setSessions([]);
-        setLoading(false);
+        if (active) {
+          setSessions([]);
+          setLoading(false);
+        }
         return;
       }
 
@@ -62,31 +86,117 @@ export function SessionsInterfilialesView() {
         query = query.or(`filiale_origine_id.eq.${filialeId},filiale_destination_id.eq.${filialeId}`);
       }
       const { data, error } = await query.limit(50);
-      if (!error && data) setSessions(data as Session[]);
+      if (!error && data && active) setSessions(data as Session[]);
 
       const { data: filialesData } = await supabase.from('filiales').select('id, nom, code').order('nom');
-      if (filialesData) setFiliales(filialesData as Filiale[]);
+      if (filialesData && active) setFiliales(filialesData as Filiale[]);
 
       const { data: articlesData } = await supabase
         .from('articles')
         .select('*')
-        .limit(100);
-      if (articlesData) setArticles(articlesData as Article[]);
+        .order('reference')
+        .limit(1000);
 
       let stockQuery = supabase
         .from('stock_items')
-        .select('id, numero_serie, marque, modele, filiale_id')
+        .select('id, numero_serie, marque, modele, filiale_id, statut')
         .order('date_entree', { ascending: false })
         .limit(200);
       if (filialeId) {
         stockQuery = stockQuery.eq('filiale_id', filialeId);
       }
       const { data: stockData } = await stockQuery;
-      if (stockData) setStockItems(stockData as StockItem[]);
 
-      setLoading(false);
+      let nextArticles = (articlesData as Article[]) || [];
+
+      if (nextArticles.length === 0 && canManageArticles) {
+        const stockItemsList = (stockData as StockItem[]) || [];
+        const existingKeys = new Set(nextArticles.map((article) => buildStockKey(article.marque, article.modele)));
+        const existingReferences = new Set(nextArticles.map((article) => (article.reference || '').toLowerCase()));
+
+        const stockSeeds = new Map<string, ArticleInsert>();
+        for (const item of stockItemsList) {
+          const key = buildStockKey(item.marque, item.modele);
+          if (!key || existingKeys.has(key)) continue;
+          const reference = buildArticleReference(item.marque, item.modele);
+          if (!reference || existingReferences.has(reference.toLowerCase())) continue;
+          stockSeeds.set(key, {
+            reference,
+            libelle: [item.marque, item.modele].filter(Boolean).join(' '),
+            categorie: 'Machine',
+            marque: item.marque,
+            modele: item.modele,
+            actif: true,
+          });
+          existingKeys.add(key);
+          existingReferences.add(reference.toLowerCase());
+        }
+
+        if (stockSeeds.size > 0) {
+          const { data: seededData } = await supabase
+            .from('articles')
+            .upsert(Array.from(stockSeeds.values()), { onConflict: 'reference' })
+            .select('id, reference, libelle, marque, modele');
+          if (seededData && seededData.length > 0) {
+            nextArticles = seededData as Article[];
+          }
+        } else if (stockItemsList.length === 0) {
+          const { data: modelesData } = await supabase
+            .from('modeles_produits')
+            .select('code_modele, nom_complet, marque:marque_id(nom, code)')
+            .eq('actif', true)
+            .limit(1000);
+          if (modelesData && modelesData.length > 0) {
+            const counts = new Map<string, number>();
+            for (const item of modelesData) {
+              const modele = item.code_modele?.trim();
+              if (!modele) continue;
+              counts.set(modele, (counts.get(modele) || 0) + 1);
+            }
+
+            const modelSeeds: ArticleInsert[] = [];
+            for (const item of modelesData) {
+              const modele = item.code_modele?.trim();
+              if (!modele) continue;
+              const marqueNom = item.marque?.nom ?? null;
+              const marqueCode = item.marque?.code ?? marqueNom;
+              const needsPrefix = (counts.get(modele) || 0) > 1;
+              const reference = buildArticleReference(needsPrefix ? marqueCode : null, modele);
+              if (!reference || existingReferences.has(reference.toLowerCase())) continue;
+              modelSeeds.push({
+                reference,
+                libelle: [marqueNom, item.nom_complet || modele].filter(Boolean).join(' '),
+                categorie: 'Machine',
+                marque: marqueNom,
+                modele,
+                actif: true,
+              });
+              existingReferences.add(reference.toLowerCase());
+            }
+
+            if (modelSeeds.length > 0) {
+              const { data: seededData } = await supabase
+                .from('articles')
+                .upsert(modelSeeds, { onConflict: 'reference' })
+                .select('id, reference, libelle, marque, modele');
+              if (seededData && seededData.length > 0) {
+                nextArticles = seededData as Article[];
+              }
+            }
+          }
+        }
+      }
+
+      if (active) {
+        if (stockData) setStockItems(stockData as StockItem[]);
+        setArticles(nextArticles);
+        setLoading(false);
+      }
     };
     load();
+    return () => {
+      active = false;
+    };
   }, [filialeId, isAdmin, profile]);
 
   const submit = async () => {
@@ -160,12 +270,38 @@ export function SessionsInterfilialesView() {
     });
     return new Map(entries);
   }, [articles]);
+  const articleById = useMemo(() => new Map(articles.map((article) => [article.id, article] as const)), [articles]);
+  const articleByKey = useMemo(() => {
+    const entries = articles
+      .map((article) => [buildStockKey(article.marque, article.modele), article] as const)
+      .filter(([key]) => key);
+    return new Map(entries);
+  }, [articles]);
   const getStockItemLabel = (item: StockItem) => {
     const base = [item.marque, item.modele].filter(Boolean).join(' ');
     const label = base || 'Stock item';
     const serial = item.numero_serie ? `S/N ${item.numero_serie}` : '';
-    return [label, serial].filter(Boolean).join(' ');
+    const status = item.statut ? `(${item.statut})` : '';
+    return [label, serial, status].filter(Boolean).join(' ');
   };
+
+  const selectedArticle = useMemo(
+    () => (formData.article_id ? articleById.get(formData.article_id) : undefined),
+    [articleById, formData.article_id]
+  );
+  const matchingStockItems = useMemo(() => {
+    if (!selectedArticle) return [];
+    const key = buildStockKey(selectedArticle.marque, selectedArticle.modele);
+    if (!key) return [];
+    return stockItems.filter((item) => {
+      if (filialeId && item.filiale_id !== filialeId) return false;
+      return buildStockKey(item.marque, item.modele) === key;
+    });
+  }, [filialeId, selectedArticle, stockItems]);
+  const availableStockCount = useMemo(() => {
+    return matchingStockItems.filter((item) => item.statut !== 'Vendu' && item.statut !== 'Obsolete').length;
+  }, [matchingStockItems]);
+  const stockOptions = selectedArticle ? matchingStockItems : [];
 
   if (loading) {
     return (
@@ -253,16 +389,18 @@ export function SessionsInterfilialesView() {
               <ArrowLeftRight className="w-5 h-5 text-fuchsia-600" />
               <h2 className="text-xl font-semibold text-slate-900">Nouvelle session interfiliales</h2>
             </div>
-            <ModalTabs
-              tabs={[
-                { id: 'transfert', label: 'Transfert' },
-                { id: 'quantites', label: 'Quantites' },
-                { id: 'notes', label: 'Notes' },
-              ]}
-              activeTab={modalTab}
-              onChange={(key) => setModalTab(key as typeof modalTab)}
-            />
-            {modalTab === 'transfert' && (
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'transfert', label: 'Transfert' },
+                  { id: 'quantites', label: 'Quantites' },
+                  { id: 'notes', label: 'Notes' },
+                ]}
+                activeTab={modalTab}
+                onChange={(key) => setModalTab(key as typeof modalTab)}
+              />
+            )}
+            {(showAllTabs || modalTab === 'transfert') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Numero</label>
@@ -292,7 +430,14 @@ export function SessionsInterfilialesView() {
                   <select
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                     value={formData.article_id}
-                    onChange={(e) => setFormData({ ...formData, article_id: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        article_id: e.target.value,
+                        stock_item_id: '',
+                        numero_serie: '',
+                      })
+                    }
                   >
                     <option value="">Choisir un article</option>
                     {articles.map((a) => (
@@ -307,10 +452,22 @@ export function SessionsInterfilialesView() {
                   <select
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                     value={formData.stock_item_id}
-                    onChange={(e) => setFormData({ ...formData, stock_item_id: e.target.value })}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      const item = stockItems.find((entry) => entry.id === value);
+                      const key = item ? buildStockKey(item.marque, item.modele) : '';
+                      const matchingArticleId = key ? articleByKey.get(key)?.id : undefined;
+                      setFormData({
+                        ...formData,
+                        stock_item_id: value,
+                        numero_serie: item?.numero_serie || '',
+                        article_id: matchingArticleId || formData.article_id,
+                      });
+                    }}
+                    disabled={!formData.article_id}
                   >
-                    <option value="">Aucun</option>
-                    {stockItems.map((item) => (
+                    <option value="">{formData.article_id ? 'Aucun' : 'Selectionnez un article'}</option>
+                    {stockOptions.map((item) => (
                       <option key={item.id} value={item.id}>
                         {getStockItemLabel(item)}
                       </option>
@@ -327,7 +484,7 @@ export function SessionsInterfilialesView() {
                 </div>
               </div>
             )}
-            {modalTab === 'quantites' && (
+            {(showAllTabs || modalTab === 'quantites') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Quantite</label>
@@ -340,6 +497,15 @@ export function SessionsInterfilialesView() {
                   />
                 </div>
                 <div className="space-y-2">
+                  <label className="text-sm font-medium text-slate-700">Stock filiale origine</label>
+                  <input
+                    className="w-full px-3 py-2 border rounded-lg bg-slate-50 text-slate-700"
+                    value={selectedArticle ? availableStockCount : ''}
+                    readOnly
+                  />
+                  <p className="text-xs text-slate-500">Basé sur le stock hors vendus/obsoletes.</p>
+                </div>
+                <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Prix de transfert (optionnel)</label>
                   <input
                     type="number"
@@ -350,7 +516,7 @@ export function SessionsInterfilialesView() {
                 </div>
               </div>
             )}
-            {modalTab === 'notes' && (
+            {(showAllTabs || modalTab === 'notes') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium text-slate-700">Commentaires</label>

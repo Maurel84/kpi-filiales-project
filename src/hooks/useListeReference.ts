@@ -7,7 +7,10 @@ type ModeleRow = Pick<
   'id' | 'code_modele' | 'nom_complet' | 'marque_id' | 'categorie_id'
 >;
 type MarqueRow = Pick<Database['public']['Tables']['marques']['Row'], 'id' | 'nom'>;
-type CategorieRow = Pick<Database['public']['Tables']['categories_produits']['Row'], 'id' | 'nom'>;
+type CategorieRow = Pick<
+  Database['public']['Tables']['categories_produits']['Row'],
+  'id' | 'nom' | 'marque_id'
+>;
 
 export type ModeleOption = {
   id: string;
@@ -17,11 +20,24 @@ export type ModeleOption = {
   gamme: string | null;
 };
 
+export type MarqueOption = {
+  id: string;
+  nom: string;
+};
+
+export type CategorieOption = {
+  id: string;
+  nom: string;
+  marque_id: string | null;
+};
+
 type PaysRow = Database['public']['Tables']['pays_reference']['Row'];
 type VendeurRow = Database['public']['Tables']['vendeurs_reference']['Row'];
 
 export function useListeReference() {
   const [modeles, setModeles] = useState<ModeleOption[]>([]);
+  const [marques, setMarques] = useState<MarqueOption[]>([]);
+  const [categories, setCategories] = useState<CategorieOption[]>([]);
   const [pays, setPays] = useState<string[]>([]);
   const [vendeurs, setVendeurs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -40,8 +56,8 @@ export function useListeReference() {
           .from('modeles_produits')
           .select('id, code_modele, nom_complet, marque_id, categorie_id')
           .order('nom_complet', { ascending: true }),
-        supabase.from('marques').select('id, nom').eq('actif', true),
-        supabase.from('categories_produits').select('id, nom').eq('actif', true),
+        supabase.from('marques').select('id, nom').eq('actif', true).order('nom'),
+        supabase.from('categories_produits').select('id, nom, marque_id').eq('actif', true).order('nom'),
         supabase.from('pays_reference').select('nom').eq('actif', true).order('nom'),
         supabase.from('vendeurs_reference').select('nom').eq('actif', true).order('nom'),
       ]);
@@ -65,6 +81,12 @@ export function useListeReference() {
           gamme: row.categorie_id ? categorieMap.get(row.categorie_id) ?? null : null,
         }));
         setModeles(options);
+      }
+      if (marquesData) {
+        setMarques(marquesData as MarqueRow[]);
+      }
+      if (categoriesData) {
+        setCategories(categoriesData as CategorieRow[]);
       }
       if (paysData) {
         setPays((paysData as PaysRow[]).map((row) => row.nom));
@@ -93,5 +115,5 @@ export function useListeReference() {
     return map;
   }, [modeles]);
 
-  return { modeles, modeleLookup, pays, vendeurs, loading };
+  return { modeles, modeleLookup, marques, categories, pays, vendeurs, loading };
 }

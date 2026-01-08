@@ -20,6 +20,7 @@ export function InspectionsTechniquesView() {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalTab, setModalTab] = useState<'infos' | 'diagnostic' | 'devis'>('infos');
+  const showAllTabs = true;
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -238,16 +239,18 @@ export function InspectionsTechniquesView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Nouvelle inspection</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'infos', label: 'Infos' },
-                { id: 'diagnostic', label: 'Diagnostic' },
-                { id: 'devis', label: 'Devis' },
-              ]}
-              activeTab={modalTab}
-              onChange={(key) => setModalTab(key as typeof modalTab)}
-            />
-            {modalTab === 'infos' && (
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'infos', label: 'Infos' },
+                  { id: 'diagnostic', label: 'Diagnostic' },
+                  { id: 'devis', label: 'Devis' },
+                ]}
+                activeTab={modalTab}
+                onChange={(key) => setModalTab(key as typeof modalTab)}
+              />
+            )}
+            {(showAllTabs || modalTab === 'infos') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Numero</label>
@@ -320,7 +323,7 @@ export function InspectionsTechniquesView() {
                 </div>
               </div>
             )}
-            {modalTab === 'diagnostic' && (
+            {(showAllTabs || modalTab === 'diagnostic') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Anomalies detectees (separees par ,)</label>
@@ -349,7 +352,7 @@ export function InspectionsTechniquesView() {
                 </div>
               </div>
             )}
-            {modalTab === 'devis' && (
+            {(showAllTabs || modalTab === 'devis') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Devis genere ?</label>

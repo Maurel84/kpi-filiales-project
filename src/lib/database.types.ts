@@ -1129,6 +1129,7 @@ export type Tables = {
           article_id: string | null
           marque: string
           modele: string
+          quantite: number
           annee_fabrication: number | null
           client_nom: string
           pays: string
@@ -1149,6 +1150,7 @@ export type Tables = {
           article_id?: string | null
           marque: string
           modele: string
+          quantite?: number
           annee_fabrication?: number | null
           client_nom: string
           pays: string
@@ -1169,6 +1171,7 @@ export type Tables = {
           article_id?: string | null
           marque?: string
           modele?: string
+          quantite?: number
           annee_fabrication?: number | null
           client_nom?: string
           pays?: string
@@ -1260,6 +1263,7 @@ export type Tables = {
           produit: string | null
           plan_compte: string | null
           constructeur: string | null
+          territoire: string | null
           created_by: string | null
           created_at: string
         }
@@ -1285,6 +1289,7 @@ export type Tables = {
           produit?: string | null
           plan_compte?: string | null
           constructeur?: string | null
+          territoire?: string | null
           created_by?: string | null
           created_at?: string
         }
@@ -1310,6 +1315,7 @@ export type Tables = {
           produit?: string | null
           plan_compte?: string | null
           constructeur?: string | null
+          territoire?: string | null
           created_by?: string | null
           created_at?: string
         }

@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, Calendar, Target, TrendingUp, Users, X } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFilialeContext } from '../../contexts/FilialeContext';
 import type { Database } from '../../lib/database.types';
 import { ModalTabs } from '../ui/ModalTabs';
+import { useListeReference } from '../../hooks/useListeReference';
 
 type Visite = Database['public']['Tables']['visites_clients']['Row'];
 type Opportunite = Database['public']['Tables']['opportunites']['Row'];
@@ -15,8 +16,8 @@ type LostSale = Database['public']['Tables']['ventes_perdues']['Row'];
 type OppForm = {
   nom_projet: string;
   ville: string;
-  marques: string;
-  modeles: string;
+  marques: string[];
+  modeles: string[];
   quantites: string;
   ca_ht_potentiel: string;
   pourcentage_marge: string;
@@ -30,6 +31,9 @@ const today = () => new Date().toISOString().slice(0, 10);
 export function VisitesClientsView() {
   const { profile } = useAuth();
   const { filialeId, isAdmin } = useFilialeContext();
+  const { marques, modeles, modeleLookup } = useListeReference();
+  const lossMarqueListId = 'visites-pertes-marques';
+  const lossModeleListId = 'visites-pertes-modeles';
   const [activeTab, setActiveTab] = useState<'visites' | 'opportunites' | 'pertes'>('visites');
   const [visites, setVisites] = useState<Visite[]>([]);
   const [opportunites, setOpportunites] = useState<Opportunite[]>([]);
@@ -48,6 +52,7 @@ export function VisitesClientsView() {
   const [visiteModalTab, setVisiteModalTab] = useState<'client' | 'contact'>('client');
   const [oppModalTab, setOppModalTab] = useState<'projet' | 'produits' | 'finances'>('projet');
   const [lossModalTab, setLossModalTab] = useState<'concurrence' | 'notes'>('concurrence');
+  const showAllTabs = true;
 
   const [visiteForm, setVisiteForm] = useState({
     date_visite: today(),
@@ -63,8 +68,8 @@ export function VisitesClientsView() {
   const [oppForm, setOppForm] = useState<OppForm>({
     nom_projet: '',
     ville: '',
-    marques: '',
-    modeles: '',
+    marques: [],
+    modeles: [],
     quantites: '1',
     ca_ht_potentiel: '',
     pourcentage_marge: '',
@@ -139,6 +144,60 @@ export function VisitesClientsView() {
     return { oppEnCours, oppGagnees, caPotentiel };
   }, [opportunites]);
 
+  const marqueOptions = useMemo(
+    () => marques.map((marque) => marque.nom).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [marques]
+  );
+
+  const modeleOptions = useMemo(() => {
+    const selected = new Set(oppForm.marques.map((marque) => marque.toLowerCase()));
+    const filtered = selected.size
+      ? modeles.filter((modele) => modele.marque && selected.has(modele.marque.toLowerCase()))
+      : modeles;
+    return Array.from(new Set(filtered.map((modele) => modele.label).filter(Boolean)));
+  }, [modeles, oppForm.marques]);
+
+  const lossModeleOptions = useMemo(() => {
+    const trimmed = lossForm.marque_concurrent?.trim().toLowerCase();
+    const filtered = trimmed
+      ? modeles.filter((modele) => modele.marque?.toLowerCase() === trimmed)
+      : modeles;
+    return Array.from(new Set(filtered.map((modele) => modele.label).filter(Boolean)));
+  }, [lossForm.marque_concurrent, modeles]);
+
+  const handleLossModeleChange = (value: string) => {
+    const trimmed = value.trim();
+    const match = trimmed ? modeleLookup.get(trimmed.toLowerCase()) : undefined;
+    setLossForm((prev) => ({
+      ...prev,
+      modele_concurrent: value,
+      marque_concurrent: match?.marque ?? prev.marque_concurrent,
+    }));
+  };
+
+  const handleOppMarquesChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const values = Array.from(event.target.selectedOptions).map((option) => option.value);
+    const allowedModeles = new Set(
+      modeles
+        .filter((modele) => {
+          if (!values.length) return true;
+          const modeleMarque = modele.marque?.toLowerCase();
+          return modeleMarque ? values.some((marque) => marque.toLowerCase() === modeleMarque) : false;
+        })
+        .map((modele) => modele.label)
+    );
+    setOppForm((prev) => ({
+      ...prev,
+      marques: values,
+      modeles: prev.modeles.filter((modele) => allowedModeles.has(modele)),
+    }));
+  };
+
+  const handleOppModelesChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    const values = Array.from(event.target.selectedOptions).map((option) => option.value);
+    setOppForm((prev) => ({ ...prev, modeles: values }));
+  };
+
   const resetErrors = () => setSubmitError('');
 
   const submitVisite = async () => {
@@ -193,12 +252,8 @@ export function VisitesClientsView() {
       return;
     }
 
-    const marquesArr = oppForm.marques
-      ? oppForm.marques.split(',').map((m) => m.trim()).filter(Boolean)
-      : null;
-    const modelesArr = oppForm.modeles
-      ? oppForm.modeles.split(',').map((m) => m.trim()).filter(Boolean)
-      : null;
+    const marquesArr = oppForm.marques.length ? oppForm.marques : null;
+    const modelesArr = oppForm.modeles.length ? oppForm.modeles : null;
 
     resetErrors();
     setSubmitLoading(true);
@@ -229,8 +284,8 @@ export function VisitesClientsView() {
       ...oppForm,
       nom_projet: '',
       ville: '',
-      marques: '',
-      modeles: '',
+      marques: [],
+      modeles: [],
       quantites: '1',
       ca_ht_potentiel: '',
       pourcentage_marge: '',
@@ -565,20 +620,22 @@ export function VisitesClientsView() {
               <X className="w-5 h-5" />
             </button>
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Nouvelle visite</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'client', label: 'Client' },
-                { id: 'contact', label: 'Contact' },
-              ]}
-              activeTab={visiteModalTab}
-              onChange={(key) => setVisiteModalTab(key as typeof visiteModalTab)}
-            />
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'client', label: 'Client' },
+                  { id: 'contact', label: 'Contact' },
+                ]}
+                activeTab={visiteModalTab}
+                onChange={(key) => setVisiteModalTab(key as typeof visiteModalTab)}
+              />
+            )}
             {!filialeId && (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 {filialeMissingMessage}
               </div>
             )}
-            {visiteModalTab === 'client' && (
+            {(showAllTabs || visiteModalTab === 'client') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Date</label>
@@ -615,7 +672,7 @@ export function VisitesClientsView() {
                 </div>
               </div>
             )}
-            {visiteModalTab === 'contact' && (
+            {(showAllTabs || visiteModalTab === 'contact') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Telephone</label>
@@ -690,21 +747,23 @@ export function VisitesClientsView() {
               <X className="w-5 h-5" />
             </button>
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Nouvelle opportunite</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'projet', label: 'Projet' },
-                { id: 'produits', label: 'Produits' },
-                { id: 'finances', label: 'Finances' },
-              ]}
-              activeTab={oppModalTab}
-              onChange={(key) => setOppModalTab(key as typeof oppModalTab)}
-            />
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'projet', label: 'Projet' },
+                  { id: 'produits', label: 'Produits' },
+                  { id: 'finances', label: 'Finances' },
+                ]}
+                activeTab={oppModalTab}
+                onChange={(key) => setOppModalTab(key as typeof oppModalTab)}
+              />
+            )}
             {!filialeId && (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 {filialeMissingMessage}
               </div>
             )}
-            {oppModalTab === 'projet' && (
+            {(showAllTabs || oppModalTab === 'projet') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Projet / Opportunite *</label>
@@ -750,25 +809,39 @@ export function VisitesClientsView() {
                 </div>
               </div>
             )}
-            {oppModalTab === 'produits' && (
+            {(showAllTabs || oppModalTab === 'produits') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Marques (liste separee par des virgules)</label>
-                  <input
+                  <label className="text-sm font-medium text-slate-700">Marques</label>
+                  <select
+                    multiple
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                     value={oppForm.marques}
-                    onChange={(e) => setOppForm({ ...oppForm, marques: e.target.value })}
-                    placeholder="Ex: Manitou, Kalmar"
-                  />
+                    onChange={handleOppMarquesChange}
+                  >
+                    {marqueOptions.map((marque) => (
+                      <option key={marque} value={marque}>
+                        {marque}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500">Selectionnez une ou plusieurs marques.</p>
                 </div>
                 <div className="space-y-2">
-                  <label className="text-sm font-medium text-slate-700">Modeles (liste separee par des virgules)</label>
-                  <input
+                  <label className="text-sm font-medium text-slate-700">Modeles</label>
+                  <select
+                    multiple
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                     value={oppForm.modeles}
-                    onChange={(e) => setOppForm({ ...oppForm, modeles: e.target.value })}
-                    placeholder="Modeles associes"
-                  />
+                    onChange={handleOppModelesChange}
+                  >
+                    {modeleOptions.map((modele) => (
+                      <option key={modele} value={modele}>
+                        {modele}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-500">Selectionnez les modeles cibles.</p>
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Quantites</label>
@@ -781,7 +854,7 @@ export function VisitesClientsView() {
                 </div>
               </div>
             )}
-            {oppModalTab === 'finances' && (
+            {(showAllTabs || oppModalTab === 'finances') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">CA HT potentiel</label>
@@ -850,20 +923,22 @@ export function VisitesClientsView() {
               <X className="w-5 h-5" />
             </button>
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Vente perdue</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'concurrence', label: 'Concurrence' },
-                { id: 'notes', label: 'Notes' },
-              ]}
-              activeTab={lossModalTab}
-              onChange={(key) => setLossModalTab(key as typeof lossModalTab)}
-            />
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'concurrence', label: 'Concurrence' },
+                  { id: 'notes', label: 'Notes' },
+                ]}
+                activeTab={lossModalTab}
+                onChange={(key) => setLossModalTab(key as typeof lossModalTab)}
+              />
+            )}
             {!filialeId && (
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                 {filialeMissingMessage}
               </div>
             )}
-            {lossModalTab === 'concurrence' && (
+            {(showAllTabs || lossModalTab === 'concurrence') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium text-slate-700">Participation</label>
@@ -890,6 +965,7 @@ export function VisitesClientsView() {
                   <label className="text-sm font-medium text-slate-700">Marque concurrence *</label>
                   <input
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    list={lossMarqueListId}
                     value={lossForm.marque_concurrent}
                     onChange={(e) => setLossForm({ ...lossForm, marque_concurrent: e.target.value })}
                   />
@@ -898,8 +974,9 @@ export function VisitesClientsView() {
                   <label className="text-sm font-medium text-slate-700">Modele concurrence</label>
                   <input
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
+                    list={lossModeleListId}
                     value={lossForm.modele_concurrent}
-                    onChange={(e) => setLossForm({ ...lossForm, modele_concurrent: e.target.value })}
+                    onChange={(e) => handleLossModeleChange(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -913,7 +990,7 @@ export function VisitesClientsView() {
                 </div>
               </div>
             )}
-            {lossModalTab === 'notes' && (
+            {(showAllTabs || lossModalTab === 'notes') && (
               <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium text-slate-700">Commentaires</label>
@@ -933,6 +1010,17 @@ export function VisitesClientsView() {
                 <span>{submitError}</span>
               </div>
             )}
+
+            <datalist id={lossMarqueListId}>
+              {marqueOptions.map((marque) => (
+                <option key={marque} value={marque} />
+              ))}
+            </datalist>
+            <datalist id={lossModeleListId}>
+              {lossModeleOptions.map((modele) => (
+                <option key={modele} value={modele} />
+              ))}
+            </datalist>
 
             <div className="mt-6 flex justify-end gap-3">
               <button

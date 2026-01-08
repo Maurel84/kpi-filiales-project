@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Plus, X, AlertCircle } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFilialeContext } from '../../contexts/FilialeContext';
 import { ModalTabs } from '../ui/ModalTabs';
+import { useListeReference } from '../../hooks/useListeReference';
 
 type LostSale = {
   id: string;
@@ -19,10 +20,14 @@ type LostSale = {
 export function VentesPerduesView() {
   const { profile } = useAuth();
   const { filialeId, isAdmin } = useFilialeContext();
+  const { marques, modeles, modeleLookup } = useListeReference();
+  const marqueListId = 'ventes-perdues-marques';
+  const modeleListId = 'ventes-perdues-modeles';
   const [items, setItems] = useState<LostSale[]>([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'concurrence' | 'notes'>('concurrence');
+  const showAllTabs = true;
   const [submitError, setSubmitError] = useState('');
   const [submitLoading, setSubmitLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -32,6 +37,29 @@ export function VentesPerduesView() {
     prix_concurrent: '',
     commentaires: '',
   });
+
+  const marqueOptions = useMemo(
+    () => marques.map((marque) => marque.nom).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+    [marques]
+  );
+
+  const modeleOptions = useMemo(() => {
+    const trimmed = formData.marque_concurrent?.trim().toLowerCase();
+    const filtered = trimmed
+      ? modeles.filter((modele) => modele.marque?.toLowerCase() === trimmed)
+      : modeles;
+    return filtered.map((modele) => modele.label).filter(Boolean);
+  }, [formData.marque_concurrent, modeles]);
+
+  const handleModeleChange = (value: string) => {
+    const trimmed = value.trim();
+    const match = trimmed ? modeleLookup.get(trimmed.toLowerCase()) : undefined;
+    setFormData((prev) => ({
+      ...prev,
+      modele_concurrent: value,
+      marque_concurrent: match?.marque ?? prev.marque_concurrent,
+    }));
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -187,16 +215,18 @@ export function VentesPerduesView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Declarer une vente perdue</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'concurrence', label: 'Concurrence' },
-                { id: 'notes', label: 'Notes' },
-              ]}
-              activeTab={activeTab}
-              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-            />
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'concurrence', label: 'Concurrence' },
+                  { id: 'notes', label: 'Notes' },
+                ]}
+                activeTab={activeTab}
+                onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+              />
+            )}
 
-            {activeTab === 'concurrence' && (
+            {(showAllTabs || activeTab === 'concurrence') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2 md:col-span-2">
                   <label className="text-sm font-medium text-slate-700">Participation</label>
@@ -223,6 +253,7 @@ export function VentesPerduesView() {
                   <label className="text-sm font-medium text-slate-700">Marque concurrence</label>
                   <input
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
+                    list={marqueListId}
                     value={formData.marque_concurrent}
                     onChange={(e) => setFormData({ ...formData, marque_concurrent: e.target.value })}
                   />
@@ -231,8 +262,9 @@ export function VentesPerduesView() {
                   <label className="text-sm font-medium text-slate-700">Modele concurrence</label>
                   <input
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-rose-500 focus:border-transparent"
+                    list={modeleListId}
                     value={formData.modele_concurrent}
-                    onChange={(e) => setFormData({ ...formData, modele_concurrent: e.target.value })}
+                    onChange={(e) => handleModeleChange(e.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -247,7 +279,7 @@ export function VentesPerduesView() {
               </div>
             )}
 
-            {activeTab === 'notes' && (
+            {(showAllTabs || activeTab === 'notes') && (
               <div className="space-y-2">
                 <label className="text-sm font-medium text-slate-700">Commentaires</label>
                 <textarea
@@ -257,6 +289,17 @@ export function VentesPerduesView() {
                 />
               </div>
             )}
+
+            <datalist id={marqueListId}>
+              {marqueOptions.map((marque) => (
+                <option key={marque} value={marque} />
+              ))}
+            </datalist>
+            <datalist id={modeleListId}>
+              {modeleOptions.map((modele) => (
+                <option key={modele} value={modele} />
+              ))}
+            </datalist>
 
             {submitError && (
               <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 flex items-center gap-2">

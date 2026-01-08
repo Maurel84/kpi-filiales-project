@@ -34,6 +34,7 @@ export function ForecastsView() {
   const [selectedYear, setSelectedYear] = useState<number>(2026);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'modele' | 'planning'>('modele');
+  const showAllTabs = true;
   const [submitLoading, setSubmitLoading] = useState(false);
   const [submitError, setSubmitError] = useState('');
   const [formData, setFormData] = useState({
@@ -290,16 +291,18 @@ export function ForecastsView() {
             </button>
 
             <h2 className="text-xl font-semibold text-slate-900 mb-4">Saisir une prévision modèle/mois</h2>
-            <ModalTabs
-              tabs={[
-                { id: 'modele', label: 'Modele' },
-                { id: 'planning', label: 'Planning' },
-              ]}
-              activeTab={activeTab}
-              onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
-            />
+            {!showAllTabs && (
+              <ModalTabs
+                tabs={[
+                  { id: 'modele', label: 'Modele' },
+                  { id: 'planning', label: 'Planning' },
+                ]}
+                activeTab={activeTab}
+                onChange={(tabId) => setActiveTab(tabId as typeof activeTab)}
+              />
+            )}
 
-            {activeTab === 'modele' && (
+            {(showAllTabs || activeTab === 'modele') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Marque</label>
@@ -343,7 +346,7 @@ export function ForecastsView() {
               </div>
             )}
 
-            {activeTab === 'planning' && (
+            {(showAllTabs || activeTab === 'planning') && (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-slate-700">Annee</label>
