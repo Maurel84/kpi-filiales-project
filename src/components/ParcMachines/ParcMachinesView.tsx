@@ -180,13 +180,13 @@ export function ParcMachinesView() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-200">
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">NÂ° SÃ©rie</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marque / ModÃ¨le</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Quantite</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Numéro de série</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Marque / Modèle</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Quantité</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Client</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Pays</th>
                 <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Statut</th>
-                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">DerniÃ¨re inspection</th>
+                <th className="text-left py-3 px-4 text-sm font-semibold text-slate-700">Dernière inspection</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
